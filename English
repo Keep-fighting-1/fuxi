@@ -1,0 +1,3253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>英语单选题在线答题系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        .option-btn {
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+        .option-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .correct-opt {
+            background-color: #dcfce7 !important;
+            border-color: #16a34a !important;
+            color: #166534 !important;
+        }
+        .wrong-opt {
+            background-color: #fee2e2 !important;
+            border-color: #dc2626 !important;
+            color: #991b1b !important;
+        }
+        .analysis-card {
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* 左侧固定题号导航 */
+        .nav-wrapper {
+            position: fixed;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 140px;
+            z-index: 50;
+            background: rgba(255,255,255,0.92);
+            backdrop-filter: blur(8px);
+            border-radius: 0 12px 12px 0;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.08);
+            padding: 10px 8px;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        .nav-wrapper::-webkit-scrollbar { width: 3px; }
+        .nav-wrapper::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+        .question-nav {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 3px;
+        }
+        .nav-dot {
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            font-size: 10px;
+            cursor: pointer;
+            border: 1px solid #e5e7eb;
+            background: #fff;
+        }
+        .nav-dot.current {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        .nav-dot.done-correct {
+            background: #dcfce7;
+            color: #166534;
+            border-color: #16a34a;
+        }
+        .nav-dot.done-wrong {
+            background: #fee2e2;
+            color: #991b1b;
+            border-color: #dc2626;
+        }
+        /* 主内容左内边距，给导航腾空间 */
+        .main-area {
+            padding-left: 150px;
+        }
+        @media (max-width: 900px) {
+            .nav-wrapper { display: none; }
+            .main-area { padding-left: 0; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-5xl mx-auto px-4 py-6">
+        <!-- 顶部状态栏 -->
+        <div class="bg-white rounded-xl shadow-sm p-4 mb-6">
+            <div class="flex flex-wrap justify-between items-center mb-3 gap-3">
+                <h1 class="text-xl font-bold text-gray-800">英语单选题在线练习</h1>
+                <button id="exportBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium">
+                    导出错题 (Word)
+                </button>
+            </div>
+            <div class="flex flex-wrap gap-6 text-sm text-gray-600 mb-3">
+                <span>答题进度：<span id="progressText">0/241</span></span>
+                <span>当前得分：<span id="scoreText">0</span> 分</span>
+                <span>错题数量：<span id="wrongCount">0</span> 道</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+                <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- 题号导航（固定在最左侧） -->
+        <div class="nav-wrapper">
+            <div class="flex items-center justify-between mb-2 px-1">
+                <span class="text-xs font-medium text-gray-500">题号</span>
+                <span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">
+                    <span id="currentNumSmall">1</span>/241
+                </span>
+            </div>
+            <div id="questionNav" class="question-nav"></div>
+        </div>
+
+        <!-- 题目主区域 -->
+        <div class="main-area">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <div class="mb-4">
+                        <h2 id="questionText" class="text-lg font-medium text-gray-800 leading-relaxed"></h2>
+                    </div>
+
+                    <div id="optionsContainer" class="space-y-3 mb-6">
+                        <!-- 选项动态渲染 -->
+                    </div>
+
+                    <!-- 答题结果与解析 -->
+                    <div id="resultArea" class="hidden analysis-card">
+                        <div id="resultTip" class="font-bold text-lg mb-3"></div>
+                        
+                        <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                            <h4 class="font-medium text-gray-700 mb-2">📖 题目解析</h4>
+                            <p id="analysisText" class="text-gray-600 text-sm leading-relaxed"></p>
+                        </div>
+
+                        <div class="bg-amber-50 rounded-lg p-4">
+                            <h4 class="font-medium text-gray-700 mb-2">📚 重点词汇&词组</h4>
+                            <ul id="vocabList" class="text-sm text-gray-600 space-y-1"></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 底部导航按钮 -->
+                <div class="flex justify-between mt-6">
+                    <button id="prevBtn" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                        上一题
+                    </button>
+                    <button id="nextBtn" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                        下一题
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===================== 完整题目数据 =====================
+        const questions = [
+            {
+                id: 1,
+                question: "What are the skills employers want and how much do they ______ between the two nations?",
+                options: { A: "vary", B: "different", C: "engage", D: "possess" },
+                answer: "A",
+                analysis: "本题考查动词辨析与句子结构。句子缺少谓语动词，表达“技能在两国之间存在差异”的含义。vary为动词，意为“变化，存在差异”，符合语法与句意。different是形容词，不能直接跟在助动词do后作谓语；engage意为“参与，吸引”；possess意为“拥有”，均不符合语境。",
+                vocabulary: [
+                    { word: "vary", meaning: "v. 变化，改变；存在差异" },
+                    { word: "employer", meaning: "n. 雇主，用人单位" },
+                    { word: "between the two nations", meaning: "在两国之间" }
+                ]
+            },
+            {
+                id: 2,
+                question: "Back in 1951, Beijing’s early-fifteenth-century ______ was still intact.",
+                options: { A: "layup", B: "layout", C: "laydown", D: "layoff" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“早在1951年，北京十五世纪早期的城市布局仍完好无损”。layout意为“布局，规划”，符合句意。layup意为“贮存，上篮”；laydown意为“放下，制定”；layoff意为“裁员，解雇”，均不符合语境。",
+                vocabulary: [
+                    { word: "layout", meaning: "n. 布局，规划；设计" },
+                    { word: "intact", meaning: "adj. 完好无损的，完整的" },
+                    { word: "back in + 年份", meaning: "早在……年" }
+                ]
+            },
+            {
+                id: 3,
+                question: "Under the terms of their agreement with the drug manufacturer, victims are not allowed to ________ the details of the settlement plan.",
+                options: { A: "reveal", B: "review", C: "revise", D: "reverse" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“根据与制药商的协议条款，受害者不得透露和解方案的细节”。reveal意为“透露，揭露”，符合句意。review意为“复习，评论”；revise意为“修改，修订”；reverse意为“颠倒，逆转”，均不符合语境。",
+                vocabulary: [
+                    { word: "reveal", meaning: "v. 透露，揭露；展示" },
+                    { word: "settlement plan", meaning: "和解方案" },
+                    { word: "manufacturer", meaning: "n. 制造商，厂商" }
+                ]
+            },
+            {
+                id: 4,
+                question: "The ______ market demands constant change and adjustment.",
+                options: { A: "dynasty", B: "denervation", C: "dynamic", D: "donator" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为“动态的市场要求持续的变革与调整”。dynamic作形容词，意为“动态的，充满活力的”，修饰market符合句意。dynasty意为“王朝”；denervation意为“去神经支配”；donator意为“捐赠者”，均不符合语境。",
+                vocabulary: [
+                    { word: "dynamic", meaning: "adj. 动态的；充满活力的 n. 动力" },
+                    { word: "constant", meaning: "adj. 持续的，不断的" },
+                    { word: "adjustment", meaning: "n. 调整，调节" }
+                ]
+            },
+            {
+                id: 5,
+                question: "The industry that attracts most young and ______ people is the industry of tomorrow.",
+                options: { A: "native", B: "creative", C: "talkative", D: "negative" },
+                answer: "B",
+                analysis: "本题考查形容词词义辨析。句意为“吸引大多数富有创造力的年轻人的行业才是未来的行业”。creative意为“有创造力的”，与young并列修饰people，符合语境。native意为“本地的”；talkative意为“健谈的”；negative意为“消极的”，均不符合句意。",
+                vocabulary: [
+                    { word: "creative", meaning: "adj. 有创造力的，创造性的" },
+                    { word: "industry", meaning: "n. 行业，工业" },
+                    { word: "the industry of tomorrow", meaning: "未来的行业" }
+                ]
+            },
+            {
+                id: 6,
+                question: "The president stopped off in Poland on his way to Shanghai for the economic_____.",
+                options: { A: "summit", B: "subscript", C: "submit", D: "submission" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“总统在前往上海参加经济峰会的途中在波兰停留”。economic summit为固定搭配，意为“经济峰会”。subscript意为“下标”；submit是动词，意为“提交”；submission意为“提交，屈服”，均不符合语境。",
+                vocabulary: [
+                    { word: "summit", meaning: "n. 峰会，首脑会议；顶峰" },
+                    { word: "stop off", meaning: "中途停留" },
+                    { word: "on one's way to", meaning: "在去……的路上" }
+                ]
+            },
+            {
+                id: 7,
+                question: "A set of ________ are installed to control the speed and direction of the vehicle.",
+                options: { A: "petals", B: "gears", C: "dears", D: "angles" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“安装了一套齿轮来控制车辆的速度和方向”。gears意为“齿轮，挡位”，符合车辆控制速度和方向的语境。petals意为“花瓣”；dears意为“亲爱的人”；angles意为“角度”，均不符合句意。",
+                vocabulary: [
+                    { word: "gear", meaning: "n. 齿轮，挡位；设备 v. 调整" },
+                    { word: "install", meaning: "v. 安装，设置" },
+                    { word: "vehicle", meaning: "n. 车辆，交通工具" }
+                ]
+            },
+            {
+                id: 8,
+                question: "Given the looming crisis of water scarcity, we _____ need more efficient and less costly methods to desalinate ocean water.",
+                options: { A: "hardly", B: "barely", C: "supposedly", D: "badly" },
+                answer: "D",
+                analysis: "本题考查副词词义辨析。句意为“鉴于水资源短缺危机日益逼近，我们迫切需要更高效、成本更低的海水淡化方法”。badly作副词，可表示“非常，迫切地”，符合语境。hardly和barely均意为“几乎不”，表否定；supposedly意为“据说，一般看来”，均不符合句意。",
+                vocabulary: [
+                    { word: "badly", meaning: "adv. 非常，迫切地；糟糕地" },
+                    { word: "looming", meaning: "adj. 逼近的，即将发生的" },
+                    { word: "desalinate", meaning: "v. 使脱盐，淡化（海水）" }
+                ]
+            },
+            {
+                id: 9,
+                question: "For most of us, memory is a mess of blurred and ______ pictures of our lives.",
+                options: { A: "disappeared", B: "faded", C: "vanished", D: "destroyed" },
+                answer: "B",
+                analysis: "本题考查形容词词义辨析。句意为“对我们大多数人来说，记忆是一堆模糊、褪色的生活画面”。faded意为“褪色的，模糊的”，与blurred并列修饰pictures，符合语境。disappeared意为“消失的”；vanished意为“突然消失的”；destroyed意为“被摧毁的”，均不如faded贴切。",
+                vocabulary: [
+                    { word: "faded", meaning: "adj. 褪色的；模糊的" },
+                    { word: "blurred", meaning: "adj. 模糊的，不清楚的" },
+                    { word: "a mess of", meaning: "一团糟，一堆杂乱的" }
+                ]
+            },
+            {
+                id: 10,
+                question: "The museum __________ the painting for quite a long time, hoping its owner would sell it someday.",
+                options: { A: "had its eye on", B: "had focus on", C: "had its eye for", D: "had paid attention to" },
+                answer: "A",
+                analysis: "本题考查固定搭配。句意为“这家博物馆对这幅画觊觎已久，希望有朝一日它的主人能将其出售”。have one's eye on为固定短语，意为“看中，觊觎，密切注意”，符合句意。focus常与on搭配，但正确形式是focus on；have an eye for表示“对……有鉴赏力”；pay attention to意为“注意”，均不符合语境。",
+                vocabulary: [
+                    { word: "have one's eye on", meaning: "看中，觊觎；密切注意" },
+                    { word: "for quite a long time", meaning: "很长一段时间" },
+                    { word: "someday", meaning: "adv. 有朝一日，某天" }
+                ]
+            },
+            {
+                id: 11,
+                question: "Everyone has the right to good medical care ______ of their ability to pay.",
+                options: { A: "regardless", B: "careless", C: "useless", D: "regretless" },
+                answer: "A",
+                analysis: "本题考查固定搭配。regardless of为固定短语，意为“不管，不顾”，符合句意“每个人都有权获得良好的医疗服务，无论其支付能力如何”。careless意为“粗心的”；useless意为“无用的”；regretless意为“无悔的”，均不能与of搭配构成符合句意的短语。",
+                vocabulary: [
+                    { word: "regardless of", meaning: "不管，不顾，无论" },
+                    { word: "medical care", meaning: "医疗服务" },
+                    { word: "ability to pay", meaning: "支付能力" }
+                ]
+            },
+            {
+                id: 12,
+                question: "How about engineering a ________ that eats carbon dioxide and thus helps protect the world from overheating.",
+                options: { A: "bacteria", B: "bacterium", C: "bacterial", D: "bacteriums" },
+                answer: "B",
+                analysis: "本题考查名词单复数。bacterium是“细菌”的单数形式，bacteria是复数形式。空格前有不定冠词a，因此用单数bacterium。bacterial是形容词，意为“细菌的”；bacteriums为错误变形。",
+                vocabulary: [
+                    { word: "bacterium", meaning: "n. 细菌（单数）" },
+                    { word: "bacteria", meaning: "n. 细菌（复数）" },
+                    { word: "carbon dioxide", meaning: "二氧化碳" }
+                ]
+            },
+            {
+                id: 13,
+                question: "In business, a __________ president usually reports directly to the president or CEO of the company and is a member of the executive management team.",
+                options: { A: "vice", B: "replaced", C: "typical", D: "representative" },
+                answer: "A",
+                analysis: "本题考查固定职位表达。vice president为固定职位名称，意为“副总裁，副总经理”，符合句意“副总裁通常直接向总裁或CEO汇报”。replaced意为“被替换的”；typical意为“典型的”；representative意为“有代表性的”，均不符合职位表达习惯。",
+                vocabulary: [
+                    { word: "vice president", meaning: "副总裁，副总经理" },
+                    { word: "report to", meaning: "向……汇报" },
+                    { word: "executive management team", meaning: "执行管理团队" }
+                ]
+            },
+            {
+                id: 14,
+                question: "Your closing paragraph should not only fit in with the body and introduction of your essay, but ________ your ideas in an effective way.",
+                options: { A: "say", B: "cite", C: "include", D: "sum up" },
+                answer: "D",
+                analysis: "本题考查动词短语辨析。句意为“你的结尾段不仅要与文章的正文和引言相契合，还要以有效的方式总结你的观点”。sum up意为“总结，概括”，符合结尾段的功能。say意为“说”；cite意为“引用”；include意为“包含”，均不符合语境。",
+                vocabulary: [
+                    { word: "sum up", meaning: "总结，概括" },
+                    { word: "closing paragraph", meaning: "结尾段" },
+                    { word: "fit in with", meaning: "与……相契合，适应" }
+                ]
+            },
+            {
+                id: 15,
+                question: "The essence of education is to _________a child’s potential.",
+                options: { A: "take away", B: "draw back", C: "draw out", D: "put out" },
+                answer: "C",
+                analysis: "本题考查动词短语辨析。句意为“教育的本质是激发孩子的潜能”。draw out意为“使发挥出来，激发”，draw out one's potential是常用搭配，意为“激发潜能”。take away意为“拿走”；draw back意为“收回，后退”；put out意为“扑灭，出版”，均不符合句意。",
+                vocabulary: [
+                    { word: "draw out", meaning: "激发，使显现；拉长" },
+                    { word: "potential", meaning: "n. 潜能 adj. 潜在的" },
+                    { word: "essence", meaning: "n. 本质，精髓" }
+                ]
+            },
+            {
+                id: 16,
+                question: "Journalists arrived (hot) on the ______ of the police for news about the accident.",
+                options: { A: "hill", B: "heels", C: "hills", D: "heel" },
+                answer: "B",
+                analysis: "本题考查固定习语。hot on the heels of为固定短语，意为“紧跟在……之后，紧接着”，符合句意“记者们紧跟在警察之后抵达，打探事故的消息”。",
+                vocabulary: [
+                    { word: "hot on the heels of", meaning: "紧跟……之后，接踵而至" },
+                    { word: "journalist", meaning: "n. 记者" },
+                    { word: "accident", meaning: "n. 事故，意外" }
+                ]
+            },
+            {
+                id: 17,
+                question: "Honesty proves to be a very important ______ of a person.",
+                options: { A: "track", B: "trail", C: "trial", D: "trait" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为“诚实被证明是一个人非常重要的品质”。trait意为“品质，特质，特征”，符合句意。track意为“轨道，足迹”；trail意为“小径，痕迹”；trial意为“试验，审判”，均不符合语境。",
+                vocabulary: [
+                    { word: "trait", meaning: "n. 品质，特质，特征" },
+                    { word: "honesty", meaning: "n. 诚实，诚信" },
+                    { word: "prove to be", meaning: "被证明是" }
+                ]
+            },
+            {
+                id: 18,
+                question: "The main costs of space exploration ______ the fact that we are set on sending humans, rather than robots.",
+                options: { A: "result in", B: "arise from", C: "because of", D: "owe to" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“太空探索的主要成本源于我们执意要送人类而非机器人上天这一事实”。arise from意为“由……引起，源于”，后接原因，符合逻辑。result in意为“导致”，后接结果；because of是介词短语，不能作谓语；owe to常用被动形式be owed to。",
+                vocabulary: [
+                    { word: "arise from", meaning: "源于，由……引起" },
+                    { word: "space exploration", meaning: "太空探索" },
+                    { word: "be set on doing sth.", meaning: "执意做某事" }
+                ]
+            },
+            {
+                id: 19,
+                question: "The patients were ______ over a period of several months.",
+                options: { A: "observed", B: "watched", C: "noticed", D: "seen" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“这些病人在数月的时间里接受了观察”。observe意为“观察，观测”，常用于医学、科研场景，符合语境。watch意为“观看，注视”；notice意为“注意到”；see意为“看见”，均不如observe专业贴切。",
+                vocabulary: [
+                    { word: "observe", meaning: "v. 观察，观测；遵守" },
+                    { word: "patient", meaning: "n. 病人 adj. 耐心的" },
+                    { word: "a period of", meaning: "一段……的时间" }
+                ]
+            },
+            {
+                id: 20,
+                question: "The noise out of window makes me ______ from my reading.",
+                options: { A: "distribute", B: "dislike", C: "discuss", D: "distract" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析与固定搭配。distract sb. from sth.为固定搭配，意为“使某人从某事上分心，分散注意力”，符合句意“窗外的噪音让我无法专心读书”。distribute意为“分配”；dislike意为“不喜欢”；discuss意为“讨论”，均不符合搭配与句意。",
+                vocabulary: [
+                    { word: "distract", meaning: "v. 使分心，分散注意力" },
+                    { word: "noise", meaning: "n. 噪音" },
+                    { word: "distract sb. from sth.", meaning: "使某人从……中分心" }
+                ]
+            },
+            {
+                id: 21,
+                question: "Scientists declared that the discovery could not only __________ Einstein’s theory of relativity but also add to their understanding of the universe.",
+                options: { A: "validate", B: "stress", C: "price", D: "rate" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“科学家宣称，这一发现不仅能验证爱因斯坦的相对论，还能加深人类对宇宙的理解”。validate意为“证实，验证”，符合科学语境。stress意为“强调”；price意为“定价”；rate意为“评价，划分等级”，均不符合句意。",
+                vocabulary: [
+                    { word: "validate", meaning: "v. 证实，验证；使生效" },
+                    { word: "theory of relativity", meaning: "相对论" },
+                    { word: "universe", meaning: "n. 宇宙" }
+                ]
+            },
+            {
+                id: 22,
+                question: "Upon successful ________ of the four-year program, the students will be awarded a bachelor’s degree.",
+                options: { A: "compete", B: "completion", C: "complete", D: "competition" },
+                answer: "B",
+                analysis: "本题考查词性辨析。空格前有形容词successful，需填入名词。completion是名词，意为“完成，结业”，符合句意“成功完成四年制课程后将授予学士学位”。compete是动词“竞争”；complete是动词/形容词“完成/完整的”；competition是名词“竞争”，均不符合语境。",
+                vocabulary: [
+                    { word: "completion", meaning: "n. 完成，结业，竣工" },
+                    { word: "bachelor's degree", meaning: "学士学位" },
+                    { word: "award", meaning: "v. 授予 n. 奖项" }
+                ]
+            },
+            {
+                id: 23,
+                question: "Our project is nearing ________, but we still need some help from you.",
+                options: { A: "competition", B: "completion", C: "compete", D: "complete" },
+                answer: "B",
+                analysis: "本题考查词性与词义辨析。空格前有动词nearing（接近），需填入名词作宾语。completion是名词，意为“完成，完工”，near completion表示“接近完工”。competition意为“竞争”；compete是动词；complete是动词/形容词，均不符合。",
+                vocabulary: [
+                    { word: "nearing completion", meaning: "接近完成/完工" },
+                    { word: "project", meaning: "n. 项目，工程" },
+                    { word: "need help from sb.", meaning: "需要某人的帮助" }
+                ]
+            },
+            {
+                id: 24,
+                question: "The paper does not explain why foreign __________ should be considered bad.",
+                options: { A: "ownership", B: "leadership", C: "note", D: "ego" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“论文并未解释为何外资所有权应被视为有害”。foreign ownership意为“外资所有权，外资持股”，符合经济语境。leadership意为“领导力”；note意为“笔记，注释”；ego意为“自我”，均不符合句意。",
+                vocabulary: [
+                    { word: "ownership", meaning: "n. 所有权，所有制" },
+                    { word: "foreign ownership", meaning: "外资所有权" },
+                    { word: "be considered bad", meaning: "被认为是有害的" }
+                ]
+            },
+            {
+                id: 25,
+                question: "Researchers have found a number of qualities that_________ a leader from a group.",
+                options: { A: "regard", B: "depart", C: "distinguish", D: "import" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析与固定搭配。distinguish A from B为固定搭配，意为“将A与B区分开”，符合句意“研究者发现了一些能将领导者与普通人区分开的特质”。regard意为“认为”；depart意为“离开”；import意为“进口”，均不符合搭配。",
+                vocabulary: [
+                    { word: "distinguish", meaning: "v. 区分，辨别；使出众" },
+                    { word: "distinguish A from B", meaning: "将A与B区分开" },
+                    { word: "quality", meaning: "n. 品质，质量" }
+                ]
+            },
+            {
+                id: 26,
+                question: "_______ dawn or dusk, they are especially busy--- older people meet in groups to chat.",
+                options: { A: "At", B: "On", C: "In", D: "For" },
+                answer: "A",
+                analysis: "本题考查介词的固定搭配。表示“在黎明/黄昏”时，用介词at，即at dawn / at dusk，为固定用法。on用于具体日期；in用于较长时间段；for表目的或持续时间，均不符合。",
+                vocabulary: [
+                    { word: "at dawn", meaning: "在黎明" },
+                    { word: "at dusk", meaning: "在黄昏" },
+                    { word: "in groups", meaning: "成群结队地" }
+                ]
+            },
+            {
+                id: 27,
+                question: "Psychologists tell us boundaries are healthy, and it’s important to ______ yourself to friends, family and lovers in stages, at appropriate times.",
+                options: { A: "reveal", B: "influence", C: "assume", D: "gear" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“心理学家告诉我们，保持边界是健康的；在合适的时机分阶段向朋友、家人和爱人展露自我很重要”。reveal oneself意为“展露自我，表露心声”，符合语境。influence意为“影响”；assume意为“假设”；gear意为“调整”，均不符合句意。",
+                vocabulary: [
+                    { word: "reveal", meaning: "v. 展露，透露；揭示" },
+                    { word: "in stages", meaning: "分阶段地" },
+                    { word: "appropriate", meaning: "adj. 合适的，恰当的" }
+                ]
+            },
+            {
+                id: 28,
+                question: "We have better maps of the surface of Mars than we do of our own ____’s sea floor.",
+                options: { A: "planet", B: "specimen", C: "landmark", D: "survival" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“我们对火星表面的了解比对我们自己星球的海底还要清楚”。our own planet指代地球，与Mars（火星）对应。specimen意为“标本”；landmark意为“地标”；survival意为“生存”，均不符合语境。",
+                vocabulary: [
+                    { word: "planet", meaning: "n. 行星，星球" },
+                    { word: "sea floor", meaning: "海底" },
+                    { word: "Mars", meaning: "n. 火星" }
+                ]
+            },
+            {
+                id: 29,
+                question: "Andrew made an initial contribution. But there is ______ no firm commitment to further cash payments.",
+                options: { A: "as far as", B: "as yet", C: "as well as", D: "as always" },
+                answer: "B",
+                analysis: "本题考查固定短语辨析。句意为“安德鲁进行了初步捐款，但迄今为止还没有进一步支付现金的明确承诺”。as yet意为“迄今为止，到目前为止”，常用于否定句，符合语境。as far as意为“就……而言”；as well as意为“和，也”；as always意为“一如既往”，均不符合句意。",
+                vocabulary: [
+                    { word: "as yet", meaning: "迄今为止，到目前为止" },
+                    { word: "initial", meaning: "adj. 最初的，初始的" },
+                    { word: "commitment", meaning: "n. 承诺，投入" }
+                ]
+            },
+            {
+                id: 30,
+                question: "It would be foolish to continue to _______ their importance.",
+                options: { A: "outlook", B: "overlook", C: "overheat", D: "outline" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为“继续忽视它们的重要性是愚蠢的”。overlook意为“忽视，忽略”，符合句意。outlook是名词，意为“前景，观点”；overheat意为“过热”；outline意为“概述，轮廓”，均不符合语境。",
+                vocabulary: [
+                    { word: "overlook", meaning: "v. 忽视，忽略；俯瞰" },
+                    { word: "importance", meaning: "n. 重要性" },
+                    { word: "foolish", meaning: "adj. 愚蠢的" }
+                ]
+            },
+            {
+                id: 31,
+                question: "The exchange of prisoners of war was one of the key ________ of the UN’s peace plan.",
+                options: { A: "effects", B: "elements", C: "results", D: "elephants" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“战俘交换是联合国和平计划的核心要素之一”。element意为“要素，组成部分”，key elements表示“核心要素”，符合句意。effect意为“效果”；result意为“结果”；elephant意为“大象”，均不符合语境。",
+                vocabulary: [
+                    { word: "element", meaning: "n. 要素，组成部分；元素" },
+                    { word: "prisoners of war", meaning: "战俘" },
+                    { word: "peace plan", meaning: "和平计划" }
+                ]
+            },
+            {
+                id: 32,
+                question: "The flood was a danger to the livelihood of the________ there.",
+                options: { A: "habitats", B: "inhabitants", C: "villagers", D: "migrants" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“洪水对当地居民的生计构成了威胁”。inhabitant意为“居民，栖息者”，泛指居住在某地的人，符合语境。habitat意为“栖息地”；villager意为“村民”，范围过窄；migrant意为“移民，流动人口”，均不符合句意。",
+                vocabulary: [
+                    { word: "inhabitant", meaning: "n. 居民，栖息者" },
+                    { word: "livelihood", meaning: "n. 生计，谋生方式" },
+                    { word: "flood", meaning: "n. 洪水" }
+                ]
+            },
+            {
+                id: 33,
+                question: "Governments of all levels should take positive steps to conserve our oceans ________ future generations.",
+                options: { A: "in the benefit of", B: "on the benefit of", C: "for the benefit of", D: "from the benefit of" },
+                answer: "C",
+                analysis: "本题考查固定短语。for the benefit of为固定搭配，意为“为了……的利益”，符合句意“各级政府应采取积极措施保护海洋，造福子孙后代”。其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "for the benefit of", meaning: "为了……的利益，造福" },
+                    { word: "conserve", meaning: "v. 保护，节约" },
+                    { word: "future generations", meaning: "后代，子孙后代" }
+                ]
+            },
+            {
+                id: 34,
+                question: "As a diplomat, he has witnessed the birth of the new nation and is well placed to _____ its growth during this critical period of its history.",
+                options: { A: "gaze", B: "glance", C: "observe", D: "look" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“作为外交官，他见证了这个新国家的诞生，也完全有条件观察其历史关键时期的发展”。observe意为“观察，注视”，强调持续、有目的地观察，符合外交语境。gaze意为“凝视”；glance意为“瞥一眼”；look为不及物动词，需加介词，均不符合。",
+                vocabulary: [
+                    { word: "observe", meaning: "v. 观察，注视；评论" },
+                    { word: "diplomat", meaning: "n. 外交官" },
+                    { word: "critical period", meaning: "关键时期" }
+                ]
+            },
+            {
+                id: 35,
+                question: "No details of the company’s financial condition were ________ at the recent shareholder meeting.",
+                options: { A: "reversed", B: "reviewed", C: "revealed", D: "revised" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“在最近的股东大会上，公司财务状况的细节并未被披露”。reveal意为“披露，透露”，符合句意。reverse意为“逆转”；review意为“回顾，审核”；revise意为“修改”，均不符合语境。",
+                vocabulary: [
+                    { word: "reveal", meaning: "v. 披露，透露，揭示" },
+                    { word: "financial condition", meaning: "财务状况" },
+                    { word: "shareholder meeting", meaning: "股东大会" }
+                ]
+            },
+            {
+                id: 36,
+                question: "The Chinese also tend to take more time building up relationships with people before ________business.",
+                options: { A: "getting down in", B: "getting down with", C: "getting down at", D: "getting down to" },
+                answer: "D",
+                analysis: "本题考查固定短语。get down to为固定搭配，意为“开始认真做，着手处理”，get down to business表示“开始谈正事，着手工作”，符合句意。其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "get down to", meaning: "开始认真做，着手处理" },
+                    { word: "build up relationships", meaning: "建立关系" },
+                    { word: "tend to do sth.", meaning: "往往会做某事" }
+                ]
+            },
+            {
+                id: 37,
+                question: "A fifth year of drought is expected to have _____ effects on the California economy.",
+                options: { A: "urgent", B: "gradual", C: "dramatic", D: "countless" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为“连续第五年的干旱预计将对加州经济产生巨大影响”。dramatic意为“巨大的，戏剧性的”，dramatic effects表示“显著影响”，符合语境。urgent意为“紧急的”；gradual意为“逐渐的”；countless意为“无数的”，均不符合句意。",
+                vocabulary: [
+                    { word: "dramatic", meaning: "adj. 巨大的，戏剧性的；引人注目的" },
+                    { word: "drought", meaning: "n. 干旱" },
+                    { word: "have effects on", meaning: "对……产生影响" }
+                ]
+            },
+            {
+                id: 38,
+                question: "His criticism injured your __________.",
+                options: { A: "leadership", B: "ego", C: "cooperation", D: "humility" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“他的批评伤害了你的自尊心”。ego意为“自我，自尊心”，injure one's ego表示“伤害某人的自尊”，符合语境。leadership意为“领导力”；cooperation意为“合作”；humility意为“谦逊”，均不符合句意。",
+                vocabulary: [
+                    { word: "ego", meaning: "n. 自我，自尊心" },
+                    { word: "criticism", meaning: "n. 批评" },
+                    { word: "injure", meaning: "v. 伤害，损害" }
+                ]
+            },
+            {
+                id: 39,
+                question: "I’ve been racking my brains all morning, trying to ______ where I put my smart phone.",
+                options: { A: "impression", B: "reminder", C: "recall", D: "react" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“我一上午都在绞尽脑汁，想回忆起把智能手机放在哪里了”。recall意为“回忆起，回想”，符合句意。impression是名词“印象”；reminder是名词“提醒物”；react意为“反应”，均不符合语境。",
+                vocabulary: [
+                    { word: "recall", meaning: "v. 回忆，回想；召回" },
+                    { word: "rack one's brains", meaning: "绞尽脑汁，冥思苦想" },
+                    { word: "smart phone", meaning: "智能手机" }
+                ]
+            },
+            {
+                id: 40,
+                question: "The show will ________ the public at 2 pm; admission will be $5.",
+                options: { A: "be creative to", B: "be free to", C: "be close to", D: "be open to" },
+                answer: "D",
+                analysis: "本题考查固定短语。be open to the public为固定表达，意为“向公众开放”，符合展览场景。be creative to无此搭配；be free to意为“自由做某事”；be close to意为“靠近”，均不符合句意。",
+                vocabulary: [
+                    { word: "be open to the public", meaning: "向公众开放" },
+                    { word: "admission", meaning: "n. 入场费；承认" },
+                    { word: "show", meaning: "n. 展览，演出" }
+                ]
+            },
+            {
+                id: 41,
+                question: "When Alice first came to the country, she was shocked by the way of life there that was totally ______ to her and the hostile environment where local people looked at her with a suspicious eye.",
+                options: { A: "influence", B: "completion", C: "expertise", D: "alien" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为“爱丽丝初到这个国家时，完全陌生的生活方式和充满敌意的环境让她感到震惊，当地人都用怀疑的眼光看她”。alien意为“陌生的，外国的”，be alien to sb.表示“对某人来说很陌生”，符合语境。influence意为“影响”；completion意为“完成”；expertise意为“专业知识”，均不符合句意。",
+                vocabulary: [
+                    { word: "alien", meaning: "adj. 陌生的；外国的 n. 外国人" },
+                    { word: "hostile", meaning: "adj. 敌对的，敌意的" },
+                    { word: "suspicious", meaning: "adj. 怀疑的，可疑的" }
+                ]
+            },
+            {
+                id: 42,
+                question: "Please _______ the main points of the text in three sentences.",
+                options: { A: "sum it up", B: "sum them up", C: "summary up", D: "sum up" },
+                answer: "B",
+                analysis: "本题考查动词短语用法。sum up意为“总结”，宾语是main points（复数），因此用代词them指代，且代词需放在短语中间，即sum them up。summary是名词，不能与up搭配作谓语。",
+                vocabulary: [
+                    { word: "sum up", meaning: "总结，概括" },
+                    { word: "main points", meaning: "要点，主要观点" },
+                    { word: "summary", meaning: "n. 总结，概要" }
+                ]
+            },
+            {
+                id: 43,
+                question: "Mark Zuckerberg is probably celebrating today after Facebook’s fourth-quarter earnings report showed __________ growth.",
+                options: { A: "essential", B: "fundamental", C: "vital", D: "exceptional" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为“脸书第四季度财报显示增长异常出色，马克·扎克伯格今天大概在庆祝了”。exceptional意为“杰出的，异常的”，exceptional growth表示“超常增长”，符合语境。essential意为“必要的”；fundamental意为“基本的”；vital意为“至关重要的”，均不符合句意。",
+                vocabulary: [
+                    { word: "exceptional", meaning: "adj. 杰出的，异常的，例外的" },
+                    { word: "earnings report", meaning: "收益报告，财报" },
+                    { word: "fourth-quarter", meaning: "第四季度的" }
+                ]
+            },
+            {
+                id: 44,
+                question: "As a result of redevelopment many people have been able to move out of old housing into new accommodation, _____ their standard of living.",
+                options: { A: "charging", B: "hoping", C: "recalling", D: "boosting" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为“重建工程让许多人得以搬出旧房子，住进新居，提升了生活水平”。boost意为“提升，促进”，boost one's standard of living表示“提高生活水平”，符合语境。charge意为“收费，指控”；hope意为“希望”；recall意为“回忆”，均不符合句意。",
+                vocabulary: [
+                    { word: "boost", meaning: "v. 提升，促进，增加" },
+                    { word: "standard of living", meaning: "生活水平" },
+                    { word: "accommodation", meaning: "n. 住处，住宿" }
+                ]
+            },
+            {
+                id: 45,
+                question: "On his return home, the government ______ him the rank of Colonel (上校).",
+                options: { A: "accordingly", B: "accord", C: "accorded", D: "according" },
+                answer: "C",
+                analysis: "本题考查动词时态与词性。句子缺少谓语动词，且为过去时态。accord作动词时意为“授予，给予”，过去式为accorded，accord sb. sth.表示“授予某人某物”。accordingly是副词“因此”；according是介词“根据”，均不能作谓语。",
+                vocabulary: [
+                    { word: "accord", meaning: "v. 授予，给予 n. 协议" },
+                    { word: "rank", meaning: "n. 军衔，等级" },
+                    { word: "on one's return home", meaning: "某人回国时" }
+                ]
+            },
+            {
+                id: 46,
+                question: "The next morning, I started trapping around the ________.",
+                options: { A: "barn", B: "horn", C: "born", D: "worn" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“第二天早上，我开始在谷仓周围设陷阱”。barn意为“谷仓，畜棚”，符合农场场景。horn意为“角，号角”；born是动词过去分词“出生”；worn是形容词“磨损的”，均不符合句意。",
+                vocabulary: [
+                    { word: "barn", meaning: "n. 谷仓，畜棚" },
+                    { word: "trap", meaning: "v. 设陷阱捕捉 n. 陷阱" },
+                    { word: "around", meaning: "prep. 在……周围" }
+                ]
+            },
+            {
+                id: 47,
+                question: "Zhao Hui, director of the Ministry of Housing’s rural construction department, admitted “the vast majority of traditional villages disappeared ________ China’s urbanization”.",
+                options: { A: "amid", B: "along", C: "beyond", D: "between" },
+                answer: "A",
+                analysis: "本题考查介词词义辨析。句意为“住建部乡村建设司司长赵晖承认，绝大多数传统村落都在中国城镇化进程中消失了”。amid意为“在……过程中，在……之中”，后接名词，符合语境。along需与with搭配；beyond意为“超过”；between意为“在两者之间”，均不符合句意。",
+                vocabulary: [
+                    { word: "amid", meaning: "prep. 在……之中，在……过程中" },
+                    { word: "urbanization", meaning: "n. 城镇化，城市化" },
+                    { word: "the vast majority of", meaning: "绝大多数的" }
+                ]
+            },
+            {
+                id: 48,
+                question: "She tore the rose apart and _____ the petals over the river.",
+                options: { A: "took", B: "cleared", C: "traced", D: "scattered" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为“她把玫瑰撕碎，将花瓣撒向河面”。scatter意为“撒，散开”，符合句意。take意为“拿走”；clear意为“清理”；trace意为“追踪，描绘”，均不符合语境。",
+                vocabulary: [
+                    { word: "scatter", meaning: "v. 撒，散开，驱散" },
+                    { word: "petal", meaning: "n. 花瓣" },
+                    { word: "tear sth. apart", meaning: "把某物撕碎" }
+                ]
+            },
+            {
+                id: 49,
+                question: "It was hard to see him clearly in the ________.",
+                options: { A: "might", B: "plight", C: "flight", D: "twilight" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为“暮色中很难看清他”。twilight意为“暮色，黄昏，微光”，in the twilight表示“在暮色中”，符合语境。might意为“力量”；plight意为“困境”；flight意为“飞行，航班”，均不符合句意。",
+                vocabulary: [
+                    { word: "twilight", meaning: "n. 暮色，黄昏；微光" },
+                    { word: "clearly", meaning: "adv. 清楚地，清晰地" },
+                    { word: "hard to do sth.", meaning: "做某事很困难" }
+                ]
+            },
+            {
+                id: 50,
+                question: "Wang zhaoxin, who ran the cigarette shop next door, arrange some ________ couches around the toilet entrance.",
+                options: { A: "rippled-down", B: "ripped-away", C: "ripped-off", D: "ripped-up" },
+                answer: "C",
+                analysis: "本题考查复合形容词辨析。句意为“开隔壁烟店的王兆新在厕所门口摆了一些破旧的二手沙发”。ripped-off意为“破旧的，被用旧的；被敲竹杠的”，符合语境。rippled-down意为“波纹下垂的”；ripped-away意为“被撕掉的”；ripped-up意为“被撕碎的”，均不符合句意。",
+                vocabulary: [
+                    { word: "ripped-off", meaning: "adj. 破旧的；被敲竹杠的" },
+                    { word: "couch", meaning: "n. 长沙发，卧榻" },
+                    { word: "entrance", meaning: "n. 入口，门口" }
+                ]
+            },
+            {
+                id: 51,
+                question: "All these parts are supposed to ________ in this device.",
+                options: { A: "fit into", B: "fit for", C: "fit out", D: "fit together" },
+                answer: "D",
+                analysis: "本题考查动词短语辨析。句意为“所有这些零件都应该能组装到这个设备里”。fit together意为“组装在一起，相互契合”，强调零件之间的组合，符合句意。fit into意为“适合，融入”，后需接宾语；fit for意为“适合于”；fit out意为“装备，配备”，均不符合语境。",
+                vocabulary: [
+                    { word: "fit together", meaning: "组装在一起，相互契合" },
+                    { word: "part", meaning: "n. 零件，部分" },
+                    { word: "device", meaning: "n. 设备，装置" }
+                ]
+            },
+            {
+                id: 52,
+                question: "Having good communication skills, both written and verbal, is an essential________ for a good manager.",
+                options: { A: "assignment", B: "dimension", C: "attribute", D: "function" },
+                answer: "C",
+                analysis: "本题考查名词词义辨析。句意为“良好的书面和口头沟通能力是优秀管理者必备的特质”。attribute意为“特质，属性，特征”，符合句意。assignment意为“任务，作业”；dimension意为“维度，方面”；function意为“功能”，均不符合语境。",
+                vocabulary: [
+                    { word: "attribute", meaning: "n. 特质，属性 v. 归因于" },
+                    { word: "communication skills", meaning: "沟通技巧" },
+                    { word: "essential", meaning: "adj. 必要的，本质的" }
+                ]
+            },
+            {
+                id: 53,
+                question: "Without __________, you are unable to learn.",
+                options: { A: "friendship", B: "community", C: "humility", D: "ownership" },
+                answer: "C",
+                analysis: "本题考查名词词义辨析。句意为“没有谦逊的态度，你就学不到东西”。humility意为“谦逊，谦虚”，符合学习的心态要求。friendship意为“友谊”；community意为“社区，群体”；ownership意为“所有权”，均不符合句意。",
+                vocabulary: [
+                    { word: "humility", meaning: "n. 谦逊，谦虚" },
+                    { word: "be unable to do sth.", meaning: "不能做某事" },
+                    { word: "without", meaning: "prep. 没有" }
+                ]
+            },
+            {
+                id: 54,
+                question: "Most of the house remains ________even after two hundred years.",
+                options: { A: "initial", B: "antique", C: "instinctive", D: "intact" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为“即使过去了两百年，这座房子的大部分仍完好无损”。intact意为“完好无损的，完整的”，remain intact表示“保持完好”，符合语境。initial意为“最初的”；antique意为“古老的，古董的”；instinctive意为“本能的”，均不符合句意。",
+                vocabulary: [
+                    { word: "intact", meaning: "adj. 完好无损的，完整的" },
+                    { word: "remain", meaning: "v. 保持，仍然是" },
+                    { word: "two hundred years", meaning: "两百年" }
+                ]
+            },
+            {
+                id: 55,
+                question: "It is also going to help China ____ beneath the waves: it will serve as a launch-pad for submarines that can dive to the deepest parts of the ocean.",
+                options: { A: "bumped", B: "rushed", C: "wandered", D: "plunged" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为“它还将助力中国向深海挺进：它将作为潜艇的发射基地，可潜至海洋最深处”。plunge意为“纵身投入，深入”，plunge beneath the waves表示“潜入深海”，符合语境。bump意为“碰撞”；rush意为“冲”；wander意为“漫游”，均不符合句意。",
+                vocabulary: [
+                    { word: "plunge", meaning: "v. 潜入，猛冲；使陷入" },
+                    { word: "submarine", meaning: "n. 潜水艇" },
+                    { word: "launch-pad", meaning: "发射台，基地" }
+                ]
+            },
+            {
+                id: 56,
+                question: "The old king was made to __________ his power to his son.",
+                options: { A: "relinquish", B: "access", C: "beware", D: "validate" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“老国王被迫将权力移交给儿子”。relinquish意为“放弃，交出（权力、控制权等）”，符合正式语境。access意为“进入，使用”；beware意为“当心”；validate意为“验证”，均不符合句意。",
+                vocabulary: [
+                    { word: "relinquish", meaning: "v. 放弃，交出（权力/控制权）" },
+                    { word: "power", meaning: "n. 权力，力量" },
+                    { word: "be made to do sth.", meaning: "被迫做某事" }
+                ]
+            },
+            {
+                id: 57,
+                question: "Recent measures have not eliminated in employment ______.",
+                options: { A: "distribution", B: "discrimination", C: "discriminatory", D: "distinction" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“近期的措施并未消除就业歧视”。discrimination意为“歧视”，employment discrimination表示“就业歧视”，符合句意。distribution意为“分配”；discriminatory是形容词“歧视性的”；distinction意为“区别，荣誉”，均不符合语境。",
+                vocabulary: [
+                    { word: "discrimination", meaning: "n. 歧视；辨别力" },
+                    { word: "employment", meaning: "n. 就业，雇佣" },
+                    { word: "eliminate", meaning: "v. 消除，淘汰" }
+                ]
+            },
+            {
+                id: 58,
+                question: "Mark is a quiet and ______ little boy.",
+                options: { A: "introduced", B: "intrinsic", C: "introverted", D: "interior" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为“马克是个安静内向的小男孩”。introverted意为“内向的”，与quiet并列，符合性格描述。introduced意为“被引进的”；intrinsic意为“内在的，本质的”；interior意为“内部的”，均不符合句意。",
+                vocabulary: [
+                    { word: "introverted", meaning: "adj. 内向的，内敛的" },
+                    { word: "quiet", meaning: "adj. 安静的，文静的" },
+                    { word: "personality", meaning: "n. 性格" }
+                ]
+            },
+            {
+                id: 59,
+                question: "In this cupboard the grandfather kept everything that he needed for his ________.",
+                options: { A: "distance", B: "subsistence", C: "resemblance", D: "resistance" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“祖父把维持生计所需的一切都放在这个橱柜里”。subsistence意为“生计，生存”，for one's subsistence表示“维持生计”，符合语境。distance意为“距离”；resemblance意为“相似”；resistance意为“抵抗”，均不符合句意。",
+                vocabulary: [
+                    { word: "subsistence", meaning: "n. 生计，生存，赖以生存的东西" },
+                    { word: "cupboard", meaning: "n. 橱柜，碗柜" },
+                    { word: "keep", meaning: "v. 存放，保持" }
+                ]
+            },
+            {
+                id: 60,
+                question: "The old couple are kept company by a dozen chickens, four cows, two nameless dogs and three cats that_________ catching an unknown number of rats.",
+                options: { A: "are characteristic of", B: "are blamed to", C: "are charged with", D: "are turned into" },
+                answer: "C",
+                analysis: "本题考查固定短语辨析。句意为“这对老夫妇有十几只鸡、四头牛、两只无名狗和三只猫作伴，这些猫负责抓老鼠，数量不详”。be charged with意为“负责，承担……任务”，符合句意。be characteristic of意为“是……的特征”；be blamed to形式错误；be turned into意为“被变成”，均不符合语境。",
+                vocabulary: [
+                    { word: "be charged with", meaning: "负责，承担；被指控" },
+                    { word: "be kept company by", meaning: "由……陪伴" },
+                    { word: "a dozen", meaning: "一打，十二个" }
+                ]
+            },
+            {
+                id: 61,
+                question: "I intend to take full _______ of this trip to buy the things we need.",
+                options: { A: "advantage", B: "usage", C: "disadvantage", D: "position" },
+                answer: "A",
+                analysis: "本题考查固定搭配。take full advantage of为固定短语，意为“充分利用”，符合句意“我打算充分利用这次旅行采购我们需要的东西”。usage意为“用法”；disadvantage意为“劣势”；position意为“位置”，均不能构成符合句意的搭配。",
+                vocabulary: [
+                    { word: "take advantage of", meaning: "利用" },
+                    { word: "take full advantage of", meaning: "充分利用" },
+                    { word: "intend to do sth.", meaning: "打算做某事" }
+                ]
+            },
+            {
+                id: 62,
+                question: "Indeed, evidence from __________ science challenges the notion that skills can exist independent of factual knowledge.",
+                options: { A: "important", B: "cognitive", C: "special", D: "extra" },
+                answer: "B",
+                analysis: "本题考查形容词词义辨析。句意为“事实上，认知科学的证据对‘技能可以脱离事实知识而存在’这一观点提出了质疑”。cognitive science意为“认知科学”，为固定学科名称。important意为“重要的”；special意为“特殊的”；extra意为“额外的”，均不符合学科表达。",
+                vocabulary: [
+                    { word: "cognitive", meaning: "adj. 认知的，认识的" },
+                    { word: "notion", meaning: "n. 观点，概念" },
+                    { word: "independent of", meaning: "独立于，不依赖于" }
+                ]
+            },
+            {
+                id: 63,
+                question: "I’m sorry to say that from the start their plan seemed_______ to failure.",
+                options: { A: "entitled", B: "positive", C: "doomed", D: "excited" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析与固定搭配。be doomed to failure为固定表达，意为“注定失败”，符合句意“很遗憾，从一开始他们的计划就注定要失败”。entitled意为“有资格的”；positive意为“积极的”；excited意为“兴奋的”，均不符合搭配与句意。",
+                vocabulary: [
+                    { word: "doomed", meaning: "adj. 注定失败的，命中注定的" },
+                    { word: "be doomed to failure", meaning: "注定失败" },
+                    { word: "from the start", meaning: "从一开始" }
+                ]
+            },
+            {
+                id: 64,
+                question: "It was______ to everyone that the child had been badly treated.",
+                options: { A: "bound", B: "visible", C: "present", D: "obvious" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为“所有人都看得出来，这个孩子受到了虐待”。it is obvious to sb. that为固定句型，意为“对某人来说……是显而易见的”。bound意为“一定的”；visible意为“可见的”；present意为“在场的，目前的”，均不符合句型与句意。",
+                vocabulary: [
+                    { word: "obvious", meaning: "adj. 明显的，显而易见的" },
+                    { word: "badly treated", meaning: "受虐待的" },
+                    { word: "It is obvious that...", meaning: "很明显……" }
+                ]
+            },
+            {
+                id: 65,
+                question: "The improper use of medicine could lead to severe ______ reactions.",
+                options: { A: "good", B: "healthy", C: "positive", D: "adverse" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为“用药不当可能导致严重的不良反应”。adverse意为“不利的，有害的”，adverse reaction为固定医学术语，意为“不良反应”。good、healthy、positive均为正向词汇，与“用药不当”的后果不符。",
+                vocabulary: [
+                    { word: "adverse", meaning: "adj. 不利的，有害的，反面的" },
+                    { word: "adverse reaction", meaning: "不良反应" },
+                    { word: "improper", meaning: "adj. 不当的，不合适的" }
+                ]
+            },
+            {
+                id: 66,
+                question: "The new policy has resulted in a _______ increase in productivity.",
+                options: { A: "domestic", B: "critic", C: "logic", D: "dramatic" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为“新政策使得生产率大幅提升”。dramatic意为“显著的，巨大的”，a dramatic increase表示“大幅增长”，符合语境。domestic意为“国内的”；critic是名词“批评家”；logic是名词“逻辑”，均不符合句意。",
+                vocabulary: [
+                    { word: "dramatic", meaning: "adj. 显著的，巨大的；戏剧性的" },
+                    { word: "productivity", meaning: "n. 生产率，生产力" },
+                    { word: "result in", meaning: "导致，造成" }
+                ]
+            },
+            {
+                id: 67,
+                question: "Most supermarkets now______ a range of organic produce.",
+                options: { A: "connects", B: "receives", C: "collects", D: "stocks" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为“如今大多数超市都备有一系列有机农产品”。stock作动词，意为“储备，备货”，符合超市经营场景。connect意为“连接”；receive意为“接收”；collect意为“收集”，均不符合句意。",
+                vocabulary: [
+                    { word: "stock", meaning: "v. 储备，备货 n. 库存，股票" },
+                    { word: "organic produce", meaning: "有机农产品" },
+                    { word: "a range of", meaning: "一系列的" }
+                ]
+            },
+            {
+                id: 68,
+                question: "He tried to_______ his flapping shirt inside his trousers.",
+                options: { A: "scatter", B: "stock", C: "tuck", D: "take" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“他试图把被风吹得鼓起来的衬衫塞进裤子里”。tuck意为“把……塞进，收拢”，tuck sth. inside sth.表示“把某物塞进某物里”，符合语境。scatter意为“撒”；stock意为“储备”；take意为“拿”，均不符合句意。",
+                vocabulary: [
+                    { word: "tuck", meaning: "v. 把……塞进，收拢；卷起" },
+                    { word: "flapping", meaning: "adj. 飘动的，鼓起来的" },
+                    { word: "trousers", meaning: "n. 裤子" }
+                ]
+            },
+            {
+                id: 69,
+                question: "However, there are scholarships for current college students with __________ grades as well.",
+                options: { A: "leadership", B: "senior", C: "exceptional", D: "cognitive" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为“不过，也有为成绩优异的在校大学生设立的奖学金”。exceptional意为“优异的，杰出的”，exceptional grades表示“优异的成绩”，符合奖学金评选标准。leadership意为“领导力”；senior意为“高级的”；cognitive意为“认知的”，均不符合句意。",
+                vocabulary: [
+                    { word: "exceptional", meaning: "adj. 优异的，杰出的；例外的" },
+                    { word: "scholarship", meaning: "n. 奖学金" },
+                    { word: "current college students", meaning: "在校大学生" }
+                ]
+            },
+            {
+                id: 70,
+                question: "—Do you think that another country will ________ to become the dominant military power in the region?",
+                options: { A: "step on", B: "step into", C: "step in", D: "step out" },
+                answer: "C",
+                analysis: "本题考查动词短语辨析。句意为“你认为会有另一个国家介入，成为该地区的主导军事力量吗？”。step in意为“介入，插手”，符合政治语境。step on意为“踩”；step into意为“进入”；step out意为“走出去，暂时离开”，均不符合句意。",
+                vocabulary: [
+                    { word: "step in", meaning: "介入，插手，干预" },
+                    { word: "dominant", meaning: "adj. 主导的，占优势的" },
+                    { word: "military power", meaning: "军事力量" }
+                ]
+            },
+            {
+                id: 71,
+                question: "Can you _____ exactly what had happened?",
+                options: { A: "remind", B: "impress", C: "recall", D: "collect" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“你能准确回忆起发生了什么吗？”。recall意为“回忆，回想”，符合句意。remind意为“提醒”，常用remind sb. of sth.；impress意为“给……留下印象”；collect意为“收集”，均不符合语境。",
+                vocabulary: [
+                    { word: "recall", meaning: "v. 回忆，回想；召回" },
+                    { word: "exactly", meaning: "adv. 准确地，确切地" },
+                    { word: "happen", meaning: "v. 发生" }
+                ]
+            },
+            {
+                id: 72,
+                question: "I did not see your cell phone and shoes, so I ______ that you had left already.",
+                options: { A: "proposed", B: "pursued", C: "assumed", D: "consumed" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“我没看到你的手机和鞋子，所以以为你已经走了”。assume意为“假定，认为，以为”，表示基于现有信息的推断，符合语境。propose意为“提议”；pursue意为“追求”；consume意为“消耗，消费”，均不符合句意。",
+                vocabulary: [
+                    { word: "assume", meaning: "v. 假定，认为；承担" },
+                    { word: "cell phone", meaning: "手机" },
+                    { word: "already", meaning: "adv. 已经" }
+                ]
+            },
+            {
+                id: 73,
+                question: "As the biggest employer of this town, DuPont has a huge amount of ______ on local politics.",
+                options: { A: "control", B: "distress", C: "influence", D: "money" },
+                answer: "C",
+                analysis: "本题考查名词词义辨析与固定搭配。have influence on为固定搭配，意为“对……有影响”，符合句意“作为镇上最大的雇主，杜邦公司对当地政治有着巨大的影响力”。control意为“控制”；distress意为“痛苦”；money意为“钱”，均不如influence贴切。",
+                vocabulary: [
+                    { word: "influence", meaning: "n. 影响，影响力 v. 影响" },
+                    { word: "have influence on", meaning: "对……有影响" },
+                    { word: "employer", meaning: "n. 雇主，用人单位" }
+                ]
+            },
+            {
+                id: 74,
+                question: "__________ in decades, the leaders of the two nations shook hands and sat down to talk.",
+                options: { A: "For all time", B: "From the beginning", C: "At a time", D: "For the first time" },
+                answer: "D",
+                analysis: "本题考查固定短语辨析。句意为“几十年来，两国领导人首次握手并坐下会谈”。for the first time意为“首次，第一次”，符合语境。for all time意为“永远”；from the beginning意为“从一开始”；at a time意为“一次，每次”，均不符合句意。",
+                vocabulary: [
+                    { word: "for the first time", meaning: "首次，第一次" },
+                    { word: "shake hands", meaning: "握手" },
+                    { word: "in decades", meaning: "几十年来" }
+                ]
+            },
+            {
+                id: 75,
+                question: "Hagfish, deep sea isopods and the large and powerful six-grill shark all showed up to _____ the buffet we had wet on the sea floor.",
+                options: { A: "feed into", B: "feed on", C: "feed with", D: "feed back" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“盲鳗、深海等足类动物以及体型庞大的六鳃鲨都出现了，享用我们放在海底的自助餐”。feed on意为“以……为食，吃”，符合语境。feed into意为“流入，注入”；feed with搭配错误；feed back意为“反馈”，均不符合句意。",
+                vocabulary: [
+                    { word: "feed on", meaning: "以……为食，吃" },
+                    { word: "sea floor", meaning: "海底" },
+                    { word: "show up", meaning: "出现，露面" }
+                ]
+            },
+            {
+                id: 76,
+                question: "The body of a ______ whale has been washed up onto the beach.",
+                options: { A: "giant", B: "vital", C: "open", D: "alien" },
+                answer: "A",
+                analysis: "本题考查形容词词义辨析。句意为“一头巨型鲸鱼的尸体被冲上了海滩”。giant意为“巨大的，巨型的”，修饰鲸鱼符合常识。vital意为“至关重要的”；open意为“开放的”；alien意为“陌生的，外星的”，均不符合句意。",
+                vocabulary: [
+                    { word: "giant", meaning: "adj. 巨大的，巨型的 n. 巨人" },
+                    { word: "be washed up onto", meaning: "被冲上……" },
+                    { word: "beach", meaning: "n. 海滩" }
+                ]
+            },
+            {
+                id: 77,
+                question: "After the obligatory bottle of champagne is ______, the tethers are cut and the 100m-long vessel rolls into the water.",
+                options: { A: "smelt", B: "brushed", C: "smashed", D: "smiled" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“在例行的香槟瓶砸碎仪式后，缆绳被切断，这艘百米长的船滑入水中”。smash意为“打碎，砸碎”，符合新船下水的传统仪式。smell意为“闻”；brush意为“刷”；smile意为“微笑”，均不符合语境。",
+                vocabulary: [
+                    { word: "smash", meaning: "v. 打碎，砸碎；猛击" },
+                    { word: "champagne", meaning: "n. 香槟酒" },
+                    { word: "vessel", meaning: "n. 船，舰；容器" }
+                ]
+            },
+            {
+                id: 78,
+                question: "The world-famous environmental activist was ________the demonstration calling for carbon emission reduction.",
+                options: { A: "at the side of", B: "at the head of", C: "at the tail of", D: "at the back of" },
+                answer: "B",
+                analysis: "本题考查固定短语辨析。句意为“这位举世闻名的环保活动家走在呼吁减排游行队伍的前列”。at the head of意为“在……的最前面，领导”，符合语境。at the side of意为“在……旁边”；at the tail of意为“在……末尾”；at the back of意为“在……后面”，均不符合句意。",
+                vocabulary: [
+                    { word: "at the head of", meaning: "在……最前列，领导" },
+                    { word: "demonstration", meaning: "n. 游行示威；演示" },
+                    { word: "carbon emission reduction", meaning: "碳减排" }
+                ]
+            },
+            {
+                id: 79,
+                question: "They sought creativity——an ______ of growing importance in the dynamic market in China.",
+                options: { A: "attribute", B: "profession", C: "regulation", D: "disposition" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“他们寻求创造力——这一特质在中国充满活力的市场中日益重要”。attribute意为“特质，属性”，指代creativity，符合句意。profession意为“职业”；regulation意为“规定”；disposition意为“性情，处置”，均不符合语境。",
+                vocabulary: [
+                    { word: "attribute", meaning: "n. 特质，属性" },
+                    { word: "creativity", meaning: "n. 创造力" },
+                    { word: "growing importance", meaning: "日益重要" }
+                ]
+            },
+            {
+                id: 80,
+                question: "Making these ______ observations are incredibly important to understanding how the ocean works.",
+                options: { A: "kinds of", B: "kind of", C: "sort of", D: "a kind of" },
+                answer: "A",
+                analysis: "本题考查数量词用法。空格后是复数名词observations，且these表示“这些”，因此用kinds of（各种各样的）。kind of / sort of意为“有点儿”，修饰形容词或动词；a kind of意为“一种”，后接单数名词，均不符合。",
+                vocabulary: [
+                    { word: "kinds of", meaning: "各种各样的，多种类型的" },
+                    { word: "observation", meaning: "n. 观察，观测" },
+                    { word: "incredibly", meaning: "adv. 极其，难以置信地" }
+                ]
+            },
+            {
+                id: 81,
+                question: "The problem arises when you go ______ with your plans.",
+                options: { A: "overtake", B: "overlap", C: "overlook", D: "overboard" },
+                answer: "D",
+                analysis: "本题考查固定短语。go overboard为固定习语，意为“做得太过火，走极端”，符合句意“当你把计划做得太过火时，问题就出现了”。overtake意为“超过”；overlap意为“重叠”；overlook意为“忽视”，均不能与go构成符合句意的短语。",
+                vocabulary: [
+                    { word: "go overboard", meaning: "做得过火，走极端" },
+                    { word: "arise", meaning: "v. 出现，产生" },
+                    { word: "plan", meaning: "n. 计划" }
+                ]
+            },
+            {
+                id: 82,
+                question: "We visited the local markets and saw a wonderful ______ of fruit and vegetables.",
+                options: { A: "array", B: "bunch", C: "bundle", D: "alley" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析与搭配。an array of为固定短语，意为“大量，一系列”，强调种类繁多，符合市场上琳琅满目的场景。bunch意为“串，束”；bundle意为“捆，包”；alley意为“小巷”，均不符合句意。",
+                vocabulary: [
+                    { word: "array", meaning: "n. 大量，一系列；阵列" },
+                    { word: "an array of", meaning: "大量的，各种各样的" },
+                    { word: "local market", meaning: "当地市场" }
+                ]
+            },
+            {
+                id: 83,
+                question: "_______ most rivers in China, the Yellow River runs from west to east.",
+                options: { A: "Unlike", B: "Likely", C: "Like", D: "Liking" },
+                answer: "C",
+                analysis: "本题考查介词用法。句意为“和中国大多数河流一样，黄河自西向东流”。like作介词，意为“像，和……一样”，符合句意。unlike意为“不像”，与事实不符；likely是形容词/副词“可能的/地”；liking是名词“喜好”，均不符合语法。",
+                vocabulary: [
+                    { word: "like", meaning: "prep. 像，和……一样 v. 喜欢" },
+                    { word: "the Yellow River", meaning: "黄河" },
+                    { word: "from west to east", meaning: "从西向东" }
+                ]
+            },
+            {
+                id: 84,
+                question: "There is no cure for this disease ______.",
+                options: { A: "as well as", B: "as far as", C: "as yet", D: "as though" },
+                answer: "C",
+                analysis: "本题考查固定短语辨析。句意为“迄今为止，这种疾病尚无治愈方法”。as yet意为“迄今为止，到目前为止”，常用于否定句，符合语境。as well as意为“和，也”；as far as意为“就……而言”；as though意为“好像”，均不符合句意。",
+                vocabulary: [
+                    { word: "as yet", meaning: "迄今为止，到目前为止" },
+                    { word: "cure", meaning: "n. 治愈方法 v. 治愈" },
+                    { word: "disease", meaning: "n. 疾病" }
+                ]
+            },
+            {
+                id: 85,
+                question: "Her ______ to her work was admirable.",
+                options: { A: "dedication", B: "delicate", C: "decay", D: "device" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“她对工作的奉献精神令人钦佩”。dedication意为“奉献，投入”，dedication to sth.表示“对某事的投入/奉献”，符合句意。delicate是形容词“精致的”；decay意为“腐烂，衰退”；device意为“设备”，均不符合语境。",
+                vocabulary: [
+                    { word: "dedication", meaning: "n. 奉献，投入，献身" },
+                    { word: "admirable", meaning: "adj. 令人钦佩的" },
+                    { word: "dedication to work", meaning: "对工作的投入" }
+                ]
+            },
+            {
+                id: 86,
+                question: "He finished his speech ______ tremendous applause.",
+                options: { A: "between", B: "beyond", C: "along", D: "amid" },
+                answer: "D",
+                analysis: "本题考查介词词义辨析。句意为“他在热烈的掌声中结束了演讲”。amid意为“在……之中”，后接名词，符合语境。between意为“在两者之间”；beyond意为“超过”；along需与with搭配，均不符合句意。",
+                vocabulary: [
+                    { word: "amid", meaning: "prep. 在……之中，在……背景下" },
+                    { word: "applause", meaning: "n. 掌声，喝彩" },
+                    { word: "speech", meaning: "n. 演讲，讲话" }
+                ]
+            },
+            {
+                id: 87,
+                question: "An audience at a performance of Hamlet know it is regarded as a work of     , so that is what they mostly see.",
+                options: { A: "genius", B: "ego", C: "ownership", D: "humility" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“观看《哈姆雷特》演出的观众都知道它被视为天才之作，因此这也是他们主要能感受到的东西”。a work of genius为固定表达，意为“天才之作”。ego意为“自我”；ownership意为“所有权”；humility意为“谦逊”，均不符合语境。",
+                vocabulary: [
+                    { word: "genius", meaning: "n. 天才，天赋；天才人物" },
+                    { word: "a work of genius", meaning: "天才之作" },
+                    { word: "be regarded as", meaning: "被视为" }
+                ]
+            },
+            {
+                id: 88,
+                question: "Scientists hope the work done ____________ other researchers may be duplicated elsewhere.",
+                options: { A: "in collaboration with", B: "as collaboration with", C: "by collaboration with", D: "in collaboration to" },
+                answer: "A",
+                analysis: "本题考查固定短语。in collaboration with为固定搭配，意为“与……合作”，符合句意“科学家希望与其他研究者合作完成的成果能在其他地方得到复制”。其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "in collaboration with", meaning: "与……合作" },
+                    { word: "duplicate", meaning: "v. 复制，重复" },
+                    { word: "researcher", meaning: "n. 研究者" }
+                ]
+            },
+            {
+                id: 89,
+                question: "It is ________ that we keep pushing the limits of our ocean.",
+                options: { A: "operative", B: "impressive", C: "imperative", D: "comparative" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析与固定句型。It is imperative that...为固定句型，意为“……是至关重要的/当务之急”，符合句意“不断探索海洋极限是我们的当务之急”。operative意为“运转的”；impressive意为“令人印象深刻的”；comparative意为“比较的”，均不符合句型与句意。",
+                vocabulary: [
+                    { word: "imperative", meaning: "adj. 至关重要的，紧急的 n. 必要的事" },
+                    { word: "It is imperative that...", meaning: "……是当务之急" },
+                    { word: "push the limits", meaning: "挑战极限" }
+                ]
+            },
+            {
+                id: 90,
+                question: "The best coaches I ever had in football were also the coaches who possessed a deep sense of __________. They were always thinking about those they were leading and rarely about themselves.",
+                options: { A: "humility", B: "caution", C: "deliberation", D: "care" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“我遇到过的最好的足球教练都非常谦逊，他们总是为队员着想，很少考虑自己”。humility意为“谦逊，谦虚”，符合“为他人着想、不自私”的描述。caution意为“谨慎”；deliberation意为“深思熟虑”；care意为“关心”，均不如humility贴切。",
+                vocabulary: [
+                    { word: "humility", meaning: "n. 谦逊，谦虚" },
+                    { word: "coach", meaning: "n. 教练 v. 指导" },
+                    { word: "possess", meaning: "v. 拥有，具备" }
+                ]
+            },
+            {
+                id: 91,
+                question: "Success in the talks will ______ his reputation as an international statesman.",
+                options: { A: "ruin", B: "enforce", C: "endanger", D: "reinforce" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为“谈判成功将巩固他作为国际政治家的声誉”。reinforce意为“巩固，加强”，reinforce one's reputation表示“巩固声誉”，符合语境。ruin意为“毁坏”；enforce意为“执行，强制”；endanger意为“危及”，均不符合句意。",
+                vocabulary: [
+                    { word: "reinforce", meaning: "v. 巩固，加强，强化" },
+                    { word: "reputation", meaning: "n. 声誉，名声" },
+                    { word: "statesman", meaning: "n. 政治家" }
+                ]
+            },
+            {
+                id: 92,
+                question: "There was anger just ________ the surface of his voice.",
+                options: { A: "beneath", B: "behind", C: "besides", D: "between" },
+                answer: "A",
+                analysis: "本题考查介词词义辨析。句意为“他的话音里暗藏着怒气”。beneath the surface为固定表达，意为“在表面之下，暗藏”，符合抽象语境。behind意为“在……后面”；besides意为“除了……还有”；between意为“在两者之间”，均不符合搭配。",
+                vocabulary: [
+                    { word: "beneath", meaning: "prep. 在……之下" },
+                    { word: "beneath the surface", meaning: "在表面之下，暗藏" },
+                    { word: "anger", meaning: "n. 愤怒" }
+                ]
+            },
+            {
+                id: 93,
+                question: "The car was a __________ wreck after the collision.",
+                options: { A: "beautiful", B: "bit", C: "worthless", D: "valuable" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为“撞车后，这辆车成了一堆毫无价值的废铁”。worthless意为“毫无价值的，没用的”，符合车祸后车辆的状态。beautiful意为“美丽的”；bit意为“少量”；valuable意为“有价值的”，均不符合句意。",
+                vocabulary: [
+                    { word: "worthless", meaning: "adj. 毫无价值的，没用的" },
+                    { word: "collision", meaning: "n. 碰撞，冲突" },
+                    { word: "wreck", meaning: "n. 残骸，废墟" }
+                ]
+            },
+            {
+                id: 94,
+                question: "His __________ was not confined to the decoration of buildings.",
+                options: { A: "energetic", B: "genius", C: "emergent", D: "giant" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“他的才华不仅限于建筑装饰领域”。genius意为“天赋，才华”，符合句意。energetic是形容词“精力充沛的”；emergent是形容词“新兴的”；giant作名词意为“巨人”，均不符合语法与语境。",
+                vocabulary: [
+                    { word: "genius", meaning: "n. 天赋，才华；天才" },
+                    { word: "be confined to", meaning: "局限于" },
+                    { word: "decoration", meaning: "n. 装饰，装潢" }
+                ]
+            },
+            {
+                id: 95,
+                question: "Making an argument — expressing a(n) __________ on a subject and supporting it with evidence — is often the aim of academic writing.",
+                options: { A: "point of view", B: "point", C: "option", D: "mind" },
+                answer: "A",
+                analysis: "本题考查固定短语。句意为“论证——就某个主题表达观点并用证据支撑——通常是学术写作的目的”。point of view意为“观点，看法”，符合学术写作语境。point意为“要点”；option意为“选择”；mind意为“头脑”，均不如point of view准确。",
+                vocabulary: [
+                    { word: "point of view", meaning: "观点，看法" },
+                    { word: "academic writing", meaning: "学术写作" },
+                    { word: "evidence", meaning: "n. 证据" }
+                ]
+            },
+            {
+                id: 96,
+                question: "How’s your diet going? You’ve ­_______________ the cake display all lunchtime!",
+                options: { A: "caught one eye to", B: "caught one eye on", C: "had your eye on", D: "had your eye to" },
+                answer: "C",
+                analysis: "本题考查固定短语。have one's eye on为固定短语，意为“盯着，看中，垂涎”，符合句意“你整个午餐时间都在盯着蛋糕柜！”。catch one's eye意为“吸引某人注意”，结构与句意不符；其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "have one's eye on", meaning: "盯着，看中，垂涎" },
+                    { word: "diet", meaning: "n. 节食，饮食" },
+                    { word: "display", meaning: "n. 陈列，展示" }
+                ]
+            },
+            {
+                id: 97,
+                question: "Bored youths _______ outside looking for trouble.",
+                options: { A: "hang on", B: "hang around", C: "hang over", D: "hang up" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“百无聊赖的年轻人在外面游荡，伺机惹事”。hang around意为“闲逛，游荡”，符合语境。hang on意为“坚持，稍等”；hang over意为“笼罩”；hang up意为“挂断电话”，均不符合句意。",
+                vocabulary: [
+                    { word: "hang around", meaning: "闲逛，游荡；逗留" },
+                    { word: "youth", meaning: "n. 年轻人，青年" },
+                    { word: "look for trouble", meaning: "惹事，自找麻烦" }
+                ]
+            },
+            {
+                id: 98,
+                question: "In his recent speech about the global climate change from the overheating atmosphere, Professor MacDonnell ___________ that last summer was one of the hottest since records began in 1880.",
+                options: { A: "noted", B: "inquired", C: "asked", D: "looked" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“麦克唐奈教授在最近关于全球气候变暖的演讲中指出，去年夏天是1880年有记录以来最热的夏天之一”。note意为“指出，特别提到”，符合正式演讲语境。inquire意为“询问”；ask意为“问”；look意为“看”，均不符合句意。",
+                vocabulary: [
+                    { word: "note", meaning: "v. 指出，特别提到；记录 n. 笔记" },
+                    { word: "climate change", meaning: "气候变化" },
+                    { word: "since records began", meaning: "自有记录以来" }
+                ]
+            },
+            {
+                id: 99,
+                question: "These ancient buildings will be ____ to the public next month because they are under repair now.",
+                options: { A: "open", B: "close", C: "nice", D: "equal" },
+                answer: "B",
+                analysis: "本题考查形容词词义辨析。句意为“这些古建筑目前正在修缮，下个月才会对公众关闭（当前不开放）”。根据“正在修缮”的原因，可知当前不对外开放，be close to the public表示“对公众关闭”。open意为“开放的”与句意相反；nice意为“好的”；equal意为“平等的”，均不符合语境。",
+                vocabulary: [
+                    { word: "close", meaning: "adj. 关闭的 v. 关闭" },
+                    { word: "under repair", meaning: "正在修缮中" },
+                    { word: "ancient buildings", meaning: "古建筑" }
+                ]
+            },
+            {
+                id: 100,
+                question: "While space travel still gets a lot of attention, not enough attention has been ______ to a major new expedition to the deepest point in the ocean.",
+                options: { A: "accordingly", B: "according", C: "accord", D: "accorded" },
+                answer: "D",
+                analysis: "本题考查动词被动语态。句子为现在完成时的被动语态，需填入过去分词。accord作动词，意为“给予，赠予”，accord attention to sth.表示“关注某事”，过去分词为accorded。accordingly是副词；according是介词；accord是动词原形，均不符合语法。",
+                vocabulary: [
+                    { word: "accord", meaning: "v. 给予，赠予 n. 协议" },
+                    { word: "expedition", meaning: "n. 探险，远征" },
+                    { word: "pay attention to", meaning: "关注" }
+                ]
+            },
+            {
+                id: 101,
+                question: "They are kept company by a dozen chickens, four cows, two nameless dogs and three cats that are charged ______ catching an unknown number of rats.",
+                options: { A: "by", B: "with", C: "up", D: "of" },
+                answer: "B",
+                analysis: "本题考查固定搭配。be charged with为固定短语，意为“负责，承担（任务）；被指控”，此处表示“负责抓老鼠”。其余介词均不能与charged构成符合句意的搭配。",
+                vocabulary: [
+                    { word: "be charged with", meaning: "负责；被指控" },
+                    { word: "rat", meaning: "n. 老鼠，大鼠" },
+                    { word: "be kept company by", meaning: "由……陪伴" }
+                ]
+            },
+            {
+                id: 102,
+                question: "At the current rate of decline, many of the rain forest animals could become _____ in less than 10 years.",
+                options: { A: "extinct", B: "distinct", C: "instinct", D: "distinctive" },
+                answer: "A",
+                analysis: "本题考查形容词词义辨析。句意为“按照目前的减少速度，许多雨林动物不到10年就可能灭绝”。become extinct意为“灭绝”，符合生态语境。distinct意为“不同的，清晰的”；instinct是名词“本能”；distinctive意为“有特色的”，均不符合句意。",
+                vocabulary: [
+                    { word: "extinct", meaning: "adj. 灭绝的，绝种的" },
+                    { word: "become extinct", meaning: "灭绝" },
+                    { word: "rain forest", meaning: "雨林" }
+                ]
+            },
+            {
+                id: 103,
+                question: "The chairman went to the conference__________ his secretary.",
+                options: { A: "toward with", B: "along with", C: "except with", D: "beside with" },
+                answer: "B",
+                analysis: "本题考查固定短语。along with为固定搭配，意为“和……一起，连同”，符合句意“主席和他的秘书一起去参加了会议”。其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "along with", meaning: "和……一起，连同" },
+                    { word: "chairman", meaning: "n. 主席，董事长" },
+                    { word: "conference", meaning: "n. 会议" }
+                ]
+            },
+            {
+                id: 104,
+                question: "Employers in both countries valued the personal skills of graduates _______ work in human resources.",
+                options: { A: "seeking", B: "sought", C: "seek", D: "seeing" },
+                answer: "A",
+                analysis: "本题考查非谓语动词。句意为“两国的雇主都看重求职人力资源岗位的毕业生的人际技能”。graduates与seek是主动关系，因此用现在分词seeking作后置定语，修饰graduates。sought是过去分词；seek是动词原形；seeing意为“看见”，均不符合语法与句意。",
+                vocabulary: [
+                    { word: "seek", meaning: "v. 寻找，谋求" },
+                    { word: "human resources", meaning: "人力资源" },
+                    { word: "graduate", meaning: "n. 毕业生" }
+                ]
+            },
+            {
+                id: 105,
+                question: "An agreement to end the fighting remains _________.",
+                options: { A: "empathetic", B: "elusive", C: "exceptional", D: "effective" },
+                answer: "B",
+                analysis: "本题考查形容词词义辨析。句意为“结束冲突的协议仍遥遥无期”。elusive意为“难以实现的，难捉摸的”，符合协议难以达成的语境。empathetic意为“共情的”；exceptional意为“杰出的”；effective意为“有效的”，均不符合句意。",
+                vocabulary: [
+                    { word: "elusive", meaning: "adj. 难以实现的；难捉摸的" },
+                    { word: "agreement", meaning: "n. 协议，同意" },
+                    { word: "fighting", meaning: "n. 战斗，冲突" }
+                ]
+            },
+            {
+                id: 106,
+                question: "It is natural for a foreigner to speak the language with a _____ of an accent.",
+                options: { A: "piece", B: "scent", C: "trace", D: "resource" },
+                answer: "C",
+                analysis: "本题考查名词词义辨析与固定搭配。a trace of为固定短语，意为“一丝，些许”，a trace of an accent表示“一点口音”，符合句意。piece意为“片，块”；scent意为“气味”；resource意为“资源”，均不符合搭配。",
+                vocabulary: [
+                    { word: "trace", meaning: "n. 痕迹，一丝 v. 追踪" },
+                    { word: "a trace of", meaning: "一丝，些许" },
+                    { word: "accent", meaning: "n. 口音" }
+                ]
+            },
+            {
+                id: 107,
+                question: "We need to ______ against the cold in winter.",
+                options: { A: "bundle over", B: "bundle up", C: "bundle on", D: "bundle around" },
+                answer: "B",
+                analysis: "本题考查固定短语。bundle up为固定短语，意为“穿得暖和，裹严实”，符合御寒的语境。其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "bundle up", meaning: "穿得暖和，裹严实" },
+                    { word: "against the cold", meaning: "御寒，抵御寒冷" },
+                    { word: "in winter", meaning: "在冬天" }
+                ]
+            },
+            {
+                id: 108,
+                question: "But nostalgia takes a back seat to pragmatism when Maijieping’s doomed locals ______ their village’s death foretold.",
+                options: { A: "wonder", B: "ponder", C: "think", D: "observe" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为“但当麦秸坪注定要消失的村民们思索着村庄早已注定的消亡时，怀旧让位于务实”。ponder意为“深思，思索”，带有严肃、沉重的意味，符合语境。wonder意为“好奇，想知道”；think意为“思考”，较为口语化；observe意为“观察”，均不如ponder贴切。",
+                vocabulary: [
+                    { word: "ponder", meaning: "v. 深思，思索，考虑" },
+                    { word: "nostalgia", meaning: "n. 怀旧，乡愁" },
+                    { word: "doomed", meaning: "adj. 注定要消亡的" }
+                ]
+            },
+            {
+                id: 109,
+                question: "“60 Minutes” recently ran a story about the dire effects on Florida’s space industry of ______ back our extraterrestrial endeavors.",
+                options: { A: "increasing", B: "reducing", C: "scaling", D: "deducing" },
+                answer: "C",
+                analysis: "本题考查动词短语辨析。scale back为固定短语，意为“缩减，缩小规模”，符合句意“缩减太空探索事业对佛罗里达航天产业的严重影响”。increase意为“增加”；reduce意为“减少”，但不与back搭配；deduce意为“推断”，均不符合搭配与句意。",
+                vocabulary: [
+                    { word: "scale back", meaning: "缩减，缩小规模" },
+                    { word: "dire", meaning: "adj. 严重的，可怕的" },
+                    { word: "extraterrestrial", meaning: "adj. 地球外的，外星的" }
+                ]
+            },
+            {
+                id: 110,
+                question: "Instead of a hat you can wear a kerchief, it will keep your ears warm and not _______ your hair _________.",
+                options: { A: "mix up", B: "mess…up", C: "upside…down", D: "confuse…with" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“你可以戴方巾代替帽子，既能保暖耳朵，又不会弄乱头发”。mess sth. up意为“弄乱，弄脏”，符合句意。mix up意为“混淆”；upside down意为“颠倒”；confuse...with意为“把……与……混淆”，均不符合语境。",
+                vocabulary: [
+                    { word: "mess up", meaning: "弄乱，弄脏，搞砸" },
+                    { word: "kerchief", meaning: "n. 方巾，头巾" },
+                    { word: "instead of", meaning: "代替，而不是" }
+                ]
+            },
+            {
+                id: 111,
+                question: "Rob stood in the hallway, from where he could ______ the happenings on the streets.",
+                options: { A: "observe", B: "glance", C: "gaze", D: "look" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“罗布站在走廊里，从那里他可以观察街上发生的事”。observe意为“观察，注视”，强调有意识地持续观察，符合语境。glance意为“瞥一眼”；gaze意为“凝视”，常与at/into搭配；look是不及物动词，需加介词，均不符合。",
+                vocabulary: [
+                    { word: "observe", meaning: "v. 观察，注视" },
+                    { word: "hallway", meaning: "n. 走廊，门厅" },
+                    { word: "happening", meaning: "n. 发生的事，事件" }
+                ]
+            },
+            {
+                id: 112,
+                question: "“______ of the fittest” is the law of the jungle.",
+                options: { A: "Survival", B: "Arrival", C: "Survive", D: "Arrive" },
+                answer: "A",
+                analysis: "本题考查固定习语。Survival of the fittest为固定表达，意为“适者生存”，是进化论的核心观点。survive是动词，不能作主语；arrival意为“到达”；arrive是动词，均不符合习语表达。",
+                vocabulary: [
+                    { word: "survival of the fittest", meaning: "适者生存" },
+                    { word: "the law of the jungle", meaning: "丛林法则" },
+                    { word: "survival", meaning: "n. 生存，幸存" }
+                ]
+            },
+            {
+                id: 113,
+                question: "The last couple of days I’ve had a severe pain in one of my upper right teeth. It hurts _________ when pressed on.",
+                options: { A: "in hell", B: "by hell", C: "like hell", D: "as hell" },
+                answer: "C",
+                analysis: "本题考查固定短语。like hell为口语中常用的副词短语，意为“非常，极其”，修饰动词hurts，表示“疼得要命”。as hell也可表示“非常”，但通常修饰形容词，如pains as hell；其余选项均不符合搭配。",
+                vocabulary: [
+                    { word: "like hell", meaning: "非常，极其；拼命地" },
+                    { word: "severe pain", meaning: "剧痛" },
+                    { word: "press on", meaning: "按压" }
+                ]
+            },
+            {
+                id: 114,
+                question: "There was no reason for such people to feel threatened by the initial incursions of modernity — if________, such elements tended to draw out the hutong spirit",
+                options: { A: "everything", B: "anything", C: "nothing", D: "something" },
+                answer: "B",
+                analysis: "本题考查固定习语。if anything为固定表达，意为“要说有什么区别的话，甚至正相反”，用于补充说明与前文相反的情况，符合句意。其余选项均不能构成符合语境的固定表达。",
+                vocabulary: [
+                    { word: "if anything", meaning: "要说有什么区别的话，甚至正相反" },
+                    { word: "modernity", meaning: "n. 现代性" },
+                    { word: "hutong", meaning: "n. 胡同" }
+                ]
+            },
+            {
+                id: 115,
+                question: "They_________, with a smile and a nod, and we miss them, and feel resentful.",
+                options: { A: "deposit", B: "apart", C: "dispute", D: "depart" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为“他们微笑着点头离去，而我们想念他们，也感到愤愤不平”。depart意为“离开，离去”，符合句意。deposit意为“存放，存款”；apart是副词“分开地”；dispute意为“争论”，均不符合语境。",
+                vocabulary: [
+                    { word: "depart", meaning: "v. 离开，离去；出发" },
+                    { word: "resentful", meaning: "adj. 愤愤不平的，怨恨的" },
+                    { word: "nod", meaning: "n./v. 点头" }
+                ]
+            },
+            {
+                id: 116,
+                question: "True marriage requires us to show trust and ________.",
+                options: { A: "loyalty", B: "royalty", C: "efficiency", D: "entirety" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“真正的婚姻要求我们展现信任与忠诚”。loyalty意为“忠诚”，与trust并列，符合婚姻的特质。royalty意为“王室，版税”；efficiency意为“效率”；entirety意为“全部”，均不符合句意。",
+                vocabulary: [
+                    { word: "loyalty", meaning: "n. 忠诚，忠心" },
+                    { word: "marriage", meaning: "n. 婚姻" },
+                    { word: "trust", meaning: "n. 信任 v. 相信" }
+                ]
+            },
+            {
+                id: 117,
+                question: "A local primary school, its roof now________, has been converted into a barn.",
+                options: { A: "collapsed", B: "connected", C: "collected", D: "cooperated" },
+                answer: "A",
+                analysis: "本题考查形容词词义辨析。句意为“当地一所小学现已屋顶坍塌，被改造成了谷仓”。collapsed意为“坍塌的，倒塌的”，修饰roof符合语境。connected意为“连接的”；collected意为“收集的”；cooperated意为“合作的”，均不符合句意。",
+                vocabulary: [
+                    { word: "collapsed", meaning: "adj. 坍塌的，倒塌的" },
+                    { word: "convert into", meaning: "改造成，转变成" },
+                    { word: "primary school", meaning: "小学" }
+                ]
+            },
+            {
+                id: 118,
+                question: "In the case of children, even more factors ______ play.",
+                options: { A: "come on", B: "come up", C: "come with", D: "come into" },
+                answer: "D",
+                analysis: "本题考查固定短语。come into play为固定习语，意为“开始起作用，开始发挥影响”，符合句意“涉及儿童时，会有更多因素开始发挥作用”。其余选项均不能构成符合句意的短语。",
+                vocabulary: [
+                    { word: "come into play", meaning: "开始起作用，开始发挥影响" },
+                    { word: "factor", meaning: "n. 因素，要素" },
+                    { word: "in the case of", meaning: "就……而言，涉及" }
+                ]
+            },
+            {
+                id: 119,
+                question: "Reports about the ­_______ of places such as Maijieping have prompted renewed debate about how best to protect and preserve rural traditions and customs in a rapidly changing nation.",
+                options: { A: "plight", B: "condition", C: "situation", D: "circumstance" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“关于麦秸坪这类地方困境的报道，再次引发了争论：在一个快速变化的国家，应如何最好地保护乡村传统与习俗”。plight意为“困境，苦境”，带有强烈的感情色彩，符合村落消亡的悲惨语境。condition、situation、circumstance均为中性词，意为“情况”，不如plight贴切。",
+                vocabulary: [
+                    { word: "plight", meaning: "n. 困境，苦境" },
+                    { word: "prompt", meaning: "v. 促使，引起" },
+                    { word: "preserve", meaning: "v. 保护，保存" }
+                ]
+            },
+            {
+                id: 120,
+                question: "At the very top are the __________ executives.",
+                options: { A: "worthless", B: "increasingly", C: "cognitive", D: "senior" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为“处于最顶层的是高级管理人员”。senior executive为固定表达，意为“高级管理人员，高管”。worthless意为“毫无价值的”；increasingly是副词“越来越多地”；cognitive意为“认知的”，均不符合职位表达。",
+                vocabulary: [
+                    { word: "senior", meaning: "adj. 高级的，资深的 n. 长辈" },
+                    { word: "senior executive", meaning: "高级管理人员" },
+                    { word: "at the top", meaning: "在顶层，处于最高位" }
+                ]
+            },
+            {
+                id: 121,
+                question: "After graduation, college students are busy applying for jobs and sending _____ to HR.",
+                options: { A: "resumes", B: "ensues", C: "consumes", D: "assumes" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“毕业后，大学生们忙着找工作，向人力资源部门投递简历”。resume意为“简历”，常用复数形式resumes，符合求职场景。ensue是动词“接着发生”；consume是动词“消耗”；assume是动词“假定”，均不符合句意。",
+                vocabulary: [
+                    { word: "resume", meaning: "n. 简历 v. 继续" },
+                    { word: "apply for jobs", meaning: "求职，申请工作" },
+                    { word: "HR (Human Resources)", meaning: "人力资源部" }
+                ]
+            },
+            {
+                id: 122,
+                question: "All children are_______ to a high-quality education regardless of their race, Zip code or family income.",
+                options: { A: "engaged", B: "endangered", C: "entitled", D: "titled" },
+                answer: "C",
+                analysis: "本题考查固定搭配。be entitled to为固定短语，意为“有权享有……”，符合句意“所有儿童都有权接受高质量教育”。engaged意为“忙碌的，已订婚的”；endangered意为“濒危的”；titled意为“有头衔的”，均不符合搭配与句意。",
+                vocabulary: [
+                    { word: "be entitled to", meaning: "有权享有……" },
+                    { word: "high-quality education", meaning: "高质量教育" },
+                    { word: "regardless of", meaning: "不管，不顾" }
+                ]
+            },
+            {
+                id: 123,
+                question: "Let me take a ______ of you guys as the group photo for the activity.",
+                options: { A: "shopping", B: "snack", C: "snapshot", D: "shoot" },
+                answer: "C",
+                analysis: "本题考查名词词义辨析与固定搭配。take a snapshot of为固定短语，意为“给……拍一张快照”，符合拍照的语境。shopping意为“购物”；snack意为“零食”；shoot作名词意为“拍摄”，但常用take a shoot表达错误。",
+                vocabulary: [
+                    { word: "snapshot", meaning: "n. 快照，抓拍" },
+                    { word: "take a snapshot of", meaning: "给……拍快照" },
+                    { word: "group photo", meaning: "合影，集体照" }
+                ]
+            },
+            {
+                id: 124,
+                question: "Never have I ______such a difficult problem.",
+                options: { A: "come with", B: "come out", C: "come by", D: "come across" },
+                answer: "D",
+                analysis: "本题考查动词短语辨析。句意为“我从未遇到过这么难的问题”。come across意为“偶然遇到，碰到”，符合句意。come with意为“伴随”；come out意为“出版，出现”；come by意为“得到，经过”，均不符合语境。",
+                vocabulary: [
+                    { word: "come across", meaning: "偶然遇到，碰到" },
+                    { word: "Never have I...", meaning: "我从未……（倒装句）" },
+                    { word: "difficult problem", meaning: "难题" }
+                ]
+            },
+            {
+                id: 125,
+                question: "Of course, from an evolutionary perspective, recognition of emotion (usually through facial gesture) was essential for ______ .",
+                options: { A: "giant", B: "survival", C: "planet", D: "influence" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“当然，从进化的角度来看，（通常通过面部表情）识别情绪对生存至关重要”。survival意为“生存”，符合进化语境。giant意为“巨人”；planet意为“行星”；influence意为“影响”，均不符合句意。",
+                vocabulary: [
+                    { word: "survival", meaning: "n. 生存，幸存" },
+                    { word: "evolutionary perspective", meaning: "进化的角度" },
+                    { word: "facial gesture", meaning: "面部表情" }
+                ]
+            },
+            {
+                id: 126,
+                question: "Even though his hair started to turn grey, my grandfather still looked very ______.",
+                options: { A: "engaged", B: "energize", C: "energetic", D: "enterprise" },
+                answer: "C",
+                analysis: "本题考查词性与词义辨析。look为系动词，后接形容词作表语。energetic是形容词，意为“精力充沛的”，符合句意。engaged意为“忙碌的”；energize是动词“使充满活力”；enterprise是名词“企业，事业心”，均不符合语法。",
+                vocabulary: [
+                    { word: "energetic", meaning: "adj. 精力充沛的，充满活力的" },
+                    { word: "turn grey", meaning: "变灰白" },
+                    { word: "grandfather", meaning: "n. 祖父，爷爷" }
+                ]
+            },
+            {
+                id: 127,
+                question: "It is ________ that we intensify our efforts to predict climate change accurately.",
+                options: { A: "imperative", B: "comparative", C: "operative", D: "impressive" },
+                answer: "A",
+                analysis: "本题考查固定句型。It is imperative that...意为“……是当务之急/至关重要的”，符合句意“当务之急是我们要加大力度，准确预测气候变化”。comparative意为“比较的”；operative意为“运转的”；impressive意为“令人印象深刻的”，均不符合句型与句意。",
+                vocabulary: [
+                    { word: "imperative", meaning: "adj. 至关重要的，紧急的" },
+                    { word: "intensify efforts", meaning: "加大力度" },
+                    { word: "climate change", meaning: "气候变化" }
+                ]
+            },
+            {
+                id: 128,
+                question: "None of our competitors comes close to our level of ________.",
+                options: { A: "expertise", B: "experience", C: "exertion", D: "exercise" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“我们的竞争对手中，没有一家的专业水平能与我们相提并论”。expertise意为“专业知识，专业技能”，符合商业竞争语境。experience意为“经验”；exertion意为“努力，费力”；exercise意为“练习，锻炼”，均不如expertise贴切。",
+                vocabulary: [
+                    { word: "expertise", meaning: "n. 专业知识，专门技能" },
+                    { word: "competitor", meaning: "n. 竞争对手" },
+                    { word: "come close to", meaning: "接近，比得上" }
+                ]
+            },
+            {
+                id: 129,
+                question: "She tried to ____ her hair under her hat.",
+                options: { A: "recall", B: "hang", C: "tuck", D: "gather" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“她试图把头发塞进帽子里”。tuck意为“把……塞进，收拢”，符合语境。recall意为“回忆”；hang意为“悬挂”；gather意为“聚集”，均不符合句意。",
+                vocabulary: [
+                    { word: "tuck", meaning: "v. 把……塞进，卷起" },
+                    { word: "under one's hat", meaning: "在帽子下面" },
+                    { word: "try to do sth.", meaning: "试图做某事" }
+                ]
+            },
+            {
+                id: 130,
+                question: "It is absolutely ________ that we deal with this emergency by tomorrow.",
+                options: { A: "comparative", B: "imperative", C: "impressive", D: "operative" },
+                answer: "B",
+                analysis: "本题考查形容词词义辨析。句意为“我们必须在明天之前处理好这一紧急情况，这是绝对必要的”。imperative意为“必要的，紧急的”，符合紧急事件的语境。comparative意为“比较的”；impressive意为“令人印象深刻的”；operative意为“有效的”，均不符合句意。",
+                vocabulary: [
+                    { word: "imperative", meaning: "adj. 必要的，紧急的，势在必行的" },
+                    { word: "emergency", meaning: "n. 紧急情况" },
+                    { word: "deal with", meaning: "处理，应对" }
+                ]
+            },
+            {
+                id: 131,
+                question: "How strange are realities ________ illusion!",
+                options: { A: "as opposed to", B: "so opposed with", C: "so opposed to", D: "as opposed with" },
+                answer: "A",
+                analysis: "本题考查固定短语。as opposed to为固定搭配，意为“与……相对，而不是”，符合句意“与幻想相比，现实是多么奇特啊”。其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "as opposed to", meaning: "与……相对，而不是" },
+                    { word: "reality", meaning: "n. 现实" },
+                    { word: "illusion", meaning: "n. 幻想，错觉" }
+                ]
+            },
+            {
+                id: 132,
+                question: "The new law’s _________ police practice is hard to evaluate right now.",
+                options: { A: "imperative on", B: "impact to", C: "imperative to", D: "impact on" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析与固定搭配。impact on为固定搭配，意为“对……的影响”，符合句意“新法律对警务实践的影响目前还难以评估”。imperative意为“必要的事”，搭配错误；impact不与to搭配。",
+                vocabulary: [
+                    { word: "impact on", meaning: "对……的影响" },
+                    { word: "evaluate", meaning: "v. 评估，评价" },
+                    { word: "police practice", meaning: "警务实践" }
+                ]
+            },
+            {
+                id: 133,
+                question: "A measure of technical knowledge is ______ in this job.",
+                options: { A: "dissemble", B: "desirable", C: "derived", D: "disputable" },
+                answer: "B",
+                analysis: "本题考查形容词词义辨析。句意为“这份工作需要具备一定的技术知识”。desirable意为“可取的，需要的，值得拥有的”，符合语境。dissemble是动词“掩饰”；derived意为“衍生的”；disputable意为“有争议的”，均不符合句意。",
+                vocabulary: [
+                    { word: "desirable", meaning: "adj. 可取的，需要的，值得拥有的" },
+                    { word: "technical knowledge", meaning: "技术知识" },
+                    { word: "a measure of", meaning: "一定程度的" }
+                ]
+            },
+            {
+                id: 134,
+                question: "________workers move from city to city in search of work.",
+                options: { A: "Migrant", B: "Local", C: "Habitat", D: "Native" },
+                answer: "A",
+                analysis: "本题考查形容词词义辨析。句意为“农民工从一个城市搬到另一个城市寻找工作”。migrant workers为固定表达，意为“农民工，流动工人”。local意为“当地的”；habitat是名词“栖息地”；native意为“本地的”，均不符合句意。",
+                vocabulary: [
+                    { word: "migrant", meaning: "adj. 流动的，移民的 n. 移民" },
+                    { word: "migrant workers", meaning: "农民工，流动工人" },
+                    { word: "in search of", meaning: "寻找" }
+                ]
+            },
+            {
+                id: 135,
+                question: "The committee is _____ of representatives from both parties.",
+                options: { A: "comprised", B: "made", C: "consisted", D: "constituted" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析与固定搭配。be comprised of为固定搭配，意为“由……组成”，相当于be made up of / consist of。consist of无被动形式；made需加up；constitute不与of搭配。",
+                vocabulary: [
+                    { word: "be comprised of", meaning: "由……组成" },
+                    { word: "committee", meaning: "n. 委员会" },
+                    { word: "representative", meaning: "n. 代表" }
+                ]
+            },
+            {
+                id: 136,
+                question: "Most students attend a university mainly to_______ the knowledge needed for their chosen profession.",
+                options: { A: "require", B: "grow", C: "quire", D: "acquire" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为“大多数学生上大学主要是为了获取所选职业所需的知识”。acquire意为“获取，获得”，acquire knowledge是常用搭配，意为“获取知识”。require意为“要求”；grow意为“成长”；quire意为“对折纸”，均不符合句意。",
+                vocabulary: [
+                    { word: "acquire", meaning: "v. 获取，获得，习得" },
+                    { word: "acquire knowledge", meaning: "获取知识" },
+                    { word: "profession", meaning: "n. 职业" }
+                ]
+            },
+            {
+                id: 137,
+                question: "That was hutong karma—sites passed through countless incarnation and always the mighty were _______.",
+                options: { A: "laid low", B: "laid out", C: "laid high", D: "laid away" },
+                answer: "A",
+                analysis: "本题考查固定短语。lay low为固定习语，意为“使倒下，打败，使衰落”，被动形式be laid low表示“被打倒，走向衰落”，符合“盛极必衰”的胡同宿命语境。lay out意为“布置，展示”；其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "lay low", meaning: "使倒下，打败，使衰落" },
+                    { word: "mighty", meaning: "n. 有权势者 adj. 强大的" },
+                    { word: "incarnation", meaning: "n. 化身，阶段" }
+                ]
+            },
+            {
+                id: 138,
+                question: "I have some urgent business to _________.",
+                options: { A: "play a role in", B: "pass through", C: "be open to", D: "attend to" },
+                answer: "D",
+                analysis: "本题考查动词短语辨析。句意为“我有一些急事要处理”。attend to意为“处理，照料”，attend to business表示“处理事务”，符合句意。play a role in意为“在……中起作用”；pass through意为“穿过”；be open to意为“对……开放”，均不符合语境。",
+                vocabulary: [
+                    { word: "attend to", meaning: "处理，照料，专心于" },
+                    { word: "urgent business", meaning: "急事" },
+                    { word: "have sth. to do", meaning: "有某事要做" }
+                ]
+            },
+            {
+                id: 139,
+                question: "We need to be able to explore, observe and learn about the oceans in their _____ in order to protect and conserve them effectively.",
+                options: { A: "entirety", B: "integrity", C: "unity", D: "reliability" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析与固定搭配。in one's entirety为固定短语，意为“整体上，全面地”，符合句意“全面了解海洋”。integrity意为“完整，正直”；unity意为“统一”；reliability意为“可靠性”，均不符合搭配。",
+                vocabulary: [
+                    { word: "entirety", meaning: "n. 全部，整体" },
+                    { word: "in one's entirety", meaning: "整体上，全面地" },
+                    { word: "conserve", meaning: "v. 保护，节约" }
+                ]
+            },
+            {
+                id: 140,
+                question: "Given the looming ________ of water scarcity, we badly need more efficient and less costly methods to desalinate ocean water.",
+                options: { A: "shortage", B: "chance", C: "danger", D: "crisis" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为“鉴于水资源短缺危机日益逼近，我们迫切需要更高效、成本更低的海水淡化方法”。looming crisis为常用搭配，意为“日益逼近的危机”，符合语境。shortage意为“短缺”，与scarcity语义重复；chance意为“机会”；danger意为“危险”，均不如crisis贴切。",
+                vocabulary: [
+                    { word: "crisis", meaning: "n. 危机" },
+                    { word: "looming crisis", meaning: "逼近的危机" },
+                    { word: "water scarcity", meaning: "水资源短缺" }
+                ]
+            },
+            {
+                id: 141,
+                question: "It often happens that interns __________ the problem of not having enough work, or being given busy work that doesn’t really add value to the company.",
+                options: { A: "are faced with", B: "learned of", C: "found out", D: "noticed that" },
+                answer: "A",
+                analysis: "本题考查动词短语辨析。句意为“实习生常常面临这样的问题：要么工作量不足，要么被安排一些对公司没有实际价值的杂活”。be faced with意为“面临，面对”，符合语境。learn of意为“得知”；find out意为“查明”；notice that意为“注意到”，后接从句，均不符合句意。",
+                vocabulary: [
+                    { word: "be faced with", meaning: "面临，面对" },
+                    { word: "intern", meaning: "n. 实习生" },
+                    { word: "add value to", meaning: "为……增值" }
+                ]
+            },
+            {
+                id: 142,
+                question: "I hope you can __________ a better plan than this.",
+                options: { A: "come up to", B: "come up with", C: "put up with", D: "put up to" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“我希望你能想出一个比这更好的计划”。come up with意为“想出，提出（主意、计划等）”，符合句意。come up to意为“达到”；put up with意为“忍受”；put up to意为“唆使”，均不符合语境。",
+                vocabulary: [
+                    { word: "come up with", meaning: "想出，提出（主意/计划）" },
+                    { word: "plan", meaning: "n. 计划" },
+                    { word: "better than", meaning: "比……更好" }
+                ]
+            },
+            {
+                id: 143,
+                question: "Universities are encouraged to develop programmes ______ at improving the entrepreneurship and employability of graduates.",
+                options: { A: "aimed", B: "aiming", C: "engaging", D: "engaged" },
+                answer: "A",
+                analysis: "本题考查非谓语动词与固定搭配。be aimed at为固定短语，意为“旨在，目的是”，此处用过去分词短语作后置定语，修饰programmes。aiming为现在分词，不与at搭配表目的；engage意为“参与”，均不符合。",
+                vocabulary: [
+                    { word: "be aimed at", meaning: "旨在，目的是" },
+                    { word: "entrepreneurship", meaning: "n. 创业精神，企业家能力" },
+                    { word: "employability", meaning: "n. 就业能力" }
+                ]
+            },
+            {
+                id: 144,
+                question: "__________ if you receive a knock on your door by a salesperson offering a great deal on satellite TV. The offer is probably too good to be true.",
+                options: { A: "Pay attention to", B: "Warn", C: "Alarm", D: "Beware" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为“当心有人上门推销超划算的卫星电视，这种好事大概率是骗局”。beware意为“当心，小心”，beware if...表示“如果……要当心”，符合警示语境。pay attention to后需接宾语；warn意为“警告”，用法为warn sb.；alarm意为“使惊恐”，均不符合语法与句意。",
+                vocabulary: [
+                    { word: "beware", meaning: "v. 当心，小心，提防" },
+                    { word: "salesperson", meaning: "n. 销售人员" },
+                    { word: "too good to be true", meaning: "好得难以置信" }
+                ]
+            },
+            {
+                id: 145,
+                question: "That data will help us do remarkable things like________ the future.",
+                options: { A: "boost", B: "conduct", C: "preview", D: "foretell" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为“这些数据将帮助我们完成了不起的事，比如预测未来”。foretell意为“预言，预测”，符合未来语境。boost意为“提升”；conduct意为“实施”；preview意为“预览”，均不符合句意。",
+                vocabulary: [
+                    { word: "foretell", meaning: "v. 预言，预测" },
+                    { word: "remarkable", meaning: "adj. 了不起的，显著的" },
+                    { word: "data", meaning: "n. 数据" }
+                ]
+            },
+            {
+                id: 146,
+                question: "They also can _______ like pendulums and jump like pogo sticks.",
+                options: { A: "slip", B: "swing", C: "slide", D: "spin" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为“它们还能像钟摆一样摆动，像弹簧单高跷一样跳跃”。swing意为“摆动，摇摆”，与pendulum（钟摆）对应，符合句意。slip意为“滑倒”；slide意为“滑动”；spin意为“旋转”，均不符合语境。",
+                vocabulary: [
+                    { word: "swing", meaning: "v. 摆动，摇摆 n. 秋千" },
+                    { word: "pendulum", meaning: "n. 钟摆，摆锤" },
+                    { word: "jump", meaning: "v. 跳跃" }
+                ]
+            },
+            {
+                id: 147,
+                question: "Scientists are attempting to compare features of ______animals with living analogues.",
+                options: { A: "distinct", B: "distinctive", C: "extinct", D: "instinct" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为“科学家正试图将已灭绝动物的特征与现存同类动物进行对比”。extinct意为“灭绝的”，与living（现存的）形成对比，符合科研语境。distinct意为“不同的”；distinctive意为“有特色的”；instinct是名词“本能”，均不符合句意。",
+                vocabulary: [
+                    { word: "extinct", meaning: "adj. 灭绝的，绝种的" },
+                    { word: "analogue", meaning: "n. 类似物，对应物" },
+                    { word: "compare...with...", meaning: "把……与……对比" }
+                ]
+            },
+            {
+                id: 148,
+                question: "With the development of China’s urbanization, a growing list of Chinese villages have slowly ______ from the country’s map.",
+                options: { A: "faded", B: "appeared", C: "missed", D: "hanged" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“随着中国城镇化的发展，越来越多的中国乡村正从国家地图上慢慢消失”。fade意为“逐渐消失，褪色”，fade from the map形象地表达“慢慢消失”，符合语境。appear意为“出现”；miss意为“错过，想念”；hang意为“悬挂”，均不符合句意。",
+                vocabulary: [
+                    { word: "fade", meaning: "v. 逐渐消失；褪色" },
+                    { word: "urbanization", meaning: "n. 城镇化，城市化" },
+                    { word: "a growing list of", meaning: "越来越多的" }
+                ]
+            },
+            {
+                id: 149,
+                question: "The school is based on the __________ principle that all children should reach their full potential and achieve success in their lives.",
+                options: { A: "important", B: "remarkable", C: "fundamental", D: "critical" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为“这所学校基于一个基本原则：所有孩子都应充分发挥潜能，在人生中取得成功”。fundamental principle为固定搭配，意为“基本原则”。important意为“重要的”；remarkable意为“显著的”；critical意为“关键的”，均不如fundamental贴切。",
+                vocabulary: [
+                    { word: "fundamental", meaning: "adj. 基本的，根本的" },
+                    { word: "fundamental principle", meaning: "基本原则" },
+                    { word: "reach one's full potential", meaning: "充分发挥潜能" }
+                ]
+            },
+            {
+                id: 150,
+                question: "The economic crisis also comes on the ______ of food and fuel crisis.",
+                options: { A: "hill", B: "heel", C: "hills", D: "heels" },
+                answer: "D",
+                analysis: "本题考查固定习语。on the heels of为固定短语，意为“紧随……之后，接踵而至”，符合句意“经济危机也紧随粮食和能源危机而来”。",
+                vocabulary: [
+                    { word: "on the heels of", meaning: "紧随……之后，接踵而至" },
+                    { word: "economic crisis", meaning: "经济危机" },
+                    { word: "fuel", meaning: "n. 燃料" }
+                ]
+            },
+            {
+                id: 151,
+                question: "I am afraid our teacher has some pressing business to _______.",
+                options: { A: "take to", B: "attend to", C: "attend for", D: "take for" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“恐怕我们老师有一些急事要处理”。attend to意为“处理，照料”，attend to business表示“处理事务”，为固定搭配。其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "attend to", meaning: "处理，照料" },
+                    { word: "pressing business", meaning: "急事，紧迫的事务" },
+                    { word: "I am afraid that...", meaning: "恐怕……" }
+                ]
+            },
+            {
+                id: 152,
+                question: "They award a green label, which can be carried on for three years, to products that meet certain environmental __________.",
+                options: { A: "condition", B: "criteria", C: "criterion", D: "standard" },
+                answer: "B",
+                analysis: "本题考查名词单复数与词义辨析。句意为“他们向符合特定环保标准的产品颁发可使用三年的绿色标签”。criteria是criterion的复数形式，意为“标准”，前面有certain（某些），需用复数形式。condition意为“条件”；standard是单数，均不符合。",
+                vocabulary: [
+                    { word: "criteria", meaning: "n. 标准（criterion的复数）" },
+                    { word: "environmental criteria", meaning: "环保标准" },
+                    { word: "label", meaning: "n. 标签" }
+                ]
+            },
+            {
+                id: 153,
+                question: "It is strange for some people to like to travel to the European and Arab countries _________ the Mediterranean.",
+                options: { A: "approaching", B: "bordering", C: "banking", D: "close" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为“有些人喜欢去地中海沿岸的欧洲和阿拉伯国家旅行，这很奇怪”。border作动词，意为“与……接壤，濒临”，bordering the Mediterranean作后置定语，意为“濒临地中海的”。approach意为“接近”；bank意为“堆积”；close是形容词，均不符合句意。",
+                vocabulary: [
+                    { word: "border", meaning: "v. 与……接壤，濒临 n. 边界" },
+                    { word: "the Mediterranean", meaning: "地中海" },
+                    { word: "travel to", meaning: "去……旅行" }
+                ]
+            },
+            {
+                id: 154,
+                question: "School children are no longer encouraged to ______ with friends after school.",
+                options: { A: "hang on", B: "hang around", C: "hang in", D: "hang up" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“人们不再鼓励小学生放学后和朋友闲逛”。hang around意为“闲逛，逗留”，符合语境。hang on意为“坚持，稍等”；hang in意为“坚持下去”；hang up意为“挂断电话”，均不符合句意。",
+                vocabulary: [
+                    { word: "hang around", meaning: "闲逛，逗留" },
+                    { word: "encourage", meaning: "v. 鼓励" },
+                    { word: "after school", meaning: "放学后" }
+                ]
+            },
+            {
+                id: 155,
+                question: "China’s latest space proclamations could conceivably produce another ‘Sputnik moment’ for the United States, ______ the country into action after a relatively fallow period in its space efforts.",
+                options: { A: "inducing", B: "furthering", C: "springing", D: "spurring" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析与固定搭配。spur sb. into action为固定短语，意为“促使某人行动起来”，符合句意“刺激美国在航天事业相对沉寂的时期后行动起来”。induce意为“诱导”；further意为“促进”；spring意为“跳跃”，均不符合搭配。",
+                vocabulary: [
+                    { word: "spur", meaning: "v. 激励，促使 n. 马刺" },
+                    { word: "spur sb. into action", meaning: "促使某人行动起来" },
+                    { word: "fallow period", meaning: "沉寂期，休耕期" }
+                ]
+            },
+            {
+                id: 156,
+                question: "The dwarf sees farther than the ______ when he stands on the latter’s shoulder.",
+                options: { A: "alien", B: "open", C: "vital", D: "giant" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为“侏儒站在巨人的肩膀上，能比巨人看得更远”。这是著名的牛顿名言，giant意为“巨人”，与dwarf（侏儒）形成对比。alien意为“外星人”；open意为“开放的”；vital意为“至关重要的”，均不符合句意。",
+                vocabulary: [
+                    { word: "giant", meaning: "n. 巨人；伟人 adj. 巨大的" },
+                    { word: "dwarf", meaning: "n. 侏儒，矮子" },
+                    { word: "farther", meaning: "adv. 更远地" }
+                ]
+            },
+            {
+                id: 157,
+                question: "Ability tests are now widely used to __________ critical qualities for job success, such as solving problems, communicating effectively, and being innovative and creative.",
+                options: { A: "assess", B: "find out", C: "exercise", D: "make use of" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“能力测试如今被广泛用于评估职场成功所需的关键特质，比如解决问题、有效沟通以及创新能力”。assess意为“评估，评定”，符合测试的功能。find out意为“查明”；exercise意为“锻炼”；make use of意为“利用”，均不符合句意。",
+                vocabulary: [
+                    { word: "assess", meaning: "v. 评估，评定" },
+                    { word: "innovative", meaning: "adj. 创新的" },
+                    { word: "critical qualities", meaning: "关键特质" }
+                ]
+            },
+            {
+                id: 158,
+                question: "The ______ of hutong had more to do with spirit than structure: it wasn’t the brick and tiles and wood that mattered; it was the way that people interacted with their environment.",
+                options: { A: "essence", B: "environment", C: "element", D: "neighborhood" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“胡同的精髓更多在于精神而非建筑结构：重要的不是砖瓦木料，而是人与环境互动的方式”。essence意为“精髓，本质”，符合句意。environment意为“环境”；element意为“元素”；neighborhood意为“街区”，均不符合语境。",
+                vocabulary: [
+                    { word: "essence", meaning: "n. 精髓，本质" },
+                    { word: "have more to do with", meaning: "更多与……有关" },
+                    { word: "interact with", meaning: "与……互动" }
+                ]
+            },
+            {
+                id: 159,
+                question: "John usually oils the ________ before he starts the machine.",
+                options: { A: "petals", B: "angles", C: "gears", D: "dears" },
+                answer: "C",
+                analysis: "本题考查名词词义辨析。句意为“约翰通常在启动机器前给齿轮上油”。gear意为“齿轮”，符合机器部件的语境。petal意为“花瓣”；angle意为“角度”；dear意为“亲爱的人”，均不符合句意。",
+                vocabulary: [
+                    { word: "gear", meaning: "n. 齿轮，挡位" },
+                    { word: "oil", meaning: "v. 给……上油 n. 油" },
+                    { word: "machine", meaning: "n. 机器" }
+                ]
+            },
+            {
+                id: 160,
+                question: "Studies have suggested that moderate consumption of alcohol —__________ red wine — may offer various health benefits.",
+                options: { A: "expect for", B: "in addition", C: "only if", D: "in particular" },
+                answer: "D",
+                analysis: "本题考查固定短语辨析。句意为“研究表明，适量饮酒——尤其是红酒——可能带来多种健康益处”。in particular意为“尤其，特别”，用于强调突出的事物，符合语境。expect for为错误搭配；in addition意为“此外”；only if意为“只有”，均不符合句意。",
+                vocabulary: [
+                    { word: "in particular", meaning: "尤其，特别" },
+                    { word: "moderate consumption", meaning: "适量饮用" },
+                    { word: "health benefits", meaning: "健康益处" }
+                ]
+            },
+            {
+                id: 161,
+                question: "If you cancel now you’ll _______ all my arrangements.",
+                options: { A: "mess in", B: "mess with", C: "mess up", D: "mess to" },
+                answer: "C",
+                analysis: "本题考查动词短语辨析。句意为“你要是现在取消，会打乱我所有的安排”。mess up意为“打乱，弄糟，搞坏”，符合句意。mess with意为“招惹，摆弄”；其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "mess up", meaning: "打乱，弄糟，搞坏" },
+                    { word: "cancel", meaning: "v. 取消" },
+                    { word: "arrangement", meaning: "n. 安排" }
+                ]
+            },
+            {
+                id: 162,
+                question: "Man’s ______ on oceans is as yet but a passing shadow.",
+                options: { A: "distress", B: "influence", C: "money", D: "control" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“人类对海洋的影响，目前还只是转瞬即逝的影子”。influence意为“影响”，influence on sth.表示“对某事的影响”，符合搭配与句意。distress意为“痛苦”；money意为“钱”；control意为“控制”，均不如influence贴切。",
+                vocabulary: [
+                    { word: "influence", meaning: "n. 影响 v. 影响" },
+                    { word: "passing shadow", meaning: "转瞬即逝的影子" },
+                    { word: "as yet", meaning: "迄今为止" }
+                ]
+            },
+            {
+                id: 163,
+                question: "Personal __________ refers to all financial decisions and activities of an individual or household, such as budgeting, insurance, savings and retirement planning.",
+                options: { A: "revenue", B: "finance", C: "money", D: "fund" },
+                answer: "B",
+                analysis: "本题考查固定术语。personal finance为固定经济术语，意为“个人理财”，符合句意。revenue意为“收入，税收”；money意为“钱”；fund意为“基金”，均不符合术语表达。",
+                vocabulary: [
+                    { word: "personal finance", meaning: "个人理财" },
+                    { word: "budgeting", meaning: "n. 做预算" },
+                    { word: "retirement planning", meaning: "退休规划" }
+                ]
+            },
+            {
+                id: 164,
+                question: "In the summer of 2002, when the Chinese men’s soccer team make history…, the W.C. Club acquire a TV … and mercilessly _______ the national team.",
+                options: { A: "docked", B: "mocked", C: "clocked", D: "stocked" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为“2002年夏天，中国男足创造历史时，世界杯俱乐部买了台电视，毫不留情地嘲讽国家队”。mock意为“嘲讽，嘲笑”，符合语境。dock意为“扣除，停靠”；clock意为“计时”；stock意为“储备”，均不符合句意。",
+                vocabulary: [
+                    { word: "mock", meaning: "v. 嘲讽，嘲笑 adj. 模拟的" },
+                    { word: "mercilessly", meaning: "adv. 毫不留情地" },
+                    { word: "make history", meaning: "创造历史" }
+                ]
+            },
+            {
+                id: 165,
+                question: "The type of worker has confidence in his ability, and is likely to feel that _______ is a waste of time.",
+                options: { A: "collaboration", B: "ego", C: "genius", D: "note" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“这类员工对自己的能力很自信，往往会觉得合作是浪费时间”。collaboration意为“合作，协作”，符合语境。ego意为“自我”；genius意为“天赋”；note意为“笔记”，均不符合句意。",
+                vocabulary: [
+                    { word: "collaboration", meaning: "n. 合作，协作" },
+                    { word: "have confidence in", meaning: "对……有信心" },
+                    { word: "a waste of time", meaning: "浪费时间" }
+                ]
+            },
+            {
+                id: 166,
+                question: "Who is _________ the administration of your company?",
+                options: { A: "in the charge of", B: "in the charge with", C: "in charge with", D: "in charge of" },
+                answer: "D",
+                analysis: "本题考查固定短语。in charge of为固定搭配，意为“负责，掌管”，主语是人。in the charge of意为“由……负责”，主语是事物；其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "in charge of", meaning: "负责，掌管" },
+                    { word: "administration", meaning: "n. 管理，行政" },
+                    { word: "company", meaning: "n. 公司" }
+                ]
+            },
+            {
+                id: 167,
+                question: "The bookshelf was designed to ________ this corner of our bedroom.",
+                options: { A: "fit together", B: "fit out", C: "fit for", D: "fit into" },
+                answer: "D",
+                analysis: "本题考查动词短语辨析。句意为“这个书架是为适配我们卧室的这个角落设计的”。fit into意为“适合，融入，适配”，后接空间，符合句意。fit together意为“组装在一起”；fit out意为“装备”；fit for意为“适合（人/用途）”，均不符合语境。",
+                vocabulary: [
+                    { word: "fit into", meaning: "适合，融入，适配" },
+                    { word: "bookshelf", meaning: "n. 书架" },
+                    { word: "bedroom", meaning: "n. 卧室" }
+                ]
+            },
+            {
+                id: 168,
+                question: "The reasons such efforts ______ up the costs include: A human needs a return ticket, while a robot can go one way.",
+                options: { A: "stand", B: "get", C: "drive", D: "turn" },
+                answer: "C",
+                analysis: "本题考查动词短语辨析。句意为“此类努力推高成本的原因包括：人类需要往返机票，而机器人可以单程前往”。drive up为固定短语，意为“推高，抬高（价格、成本等）”，符合句意。stand up意为“站起来”；get up意为“起床”；turn up意为“出现，调大”，均不符合语境。",
+                vocabulary: [
+                    { word: "drive up", meaning: "推高，抬高（成本/价格）" },
+                    { word: "return ticket", meaning: "往返机票" },
+                    { word: "one way", meaning: "单程" }
+                ]
+            },
+            {
+                id: 169,
+                question: "The director general delivered a speech emphasizing the importance of __________ between universities and businesses for a vibrant economy.",
+                options: { A: "collaboration", B: "communication", C: "translation", D: "interaction" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为“总干事发表演讲，强调校企合作对经济活力的重要性”。collaboration意为“合作，协作”，collaboration between A and B表示“A与B之间的合作”，符合语境。communication意为“交流”；translation意为“翻译”；interaction意为“互动”，均不如collaboration贴切。",
+                vocabulary: [
+                    { word: "collaboration", meaning: "n. 合作，协作" },
+                    { word: "vibrant economy", meaning: "充满活力的经济" },
+                    { word: "deliver a speech", meaning: "发表演讲" }
+                ]
+            },
+            {
+                id: 170,
+                question: "Our project is as yet far from completion. A considerable ________ of work remains to be done.",
+                options: { A: "among", B: "amounts", C: "amount", D: "amour" },
+                answer: "C",
+                analysis: "本题考查固定搭配。a considerable amount of为固定短语，意为“大量的”，修饰不可数名词work。among是介词；amounts是复数，不与a搭配；amour意为“恋情”，均不符合。",
+                vocabulary: [
+                    { word: "a considerable amount of", meaning: "大量的（修饰不可数名词）" },
+                    { word: "far from completion", meaning: "远未完成" },
+                    { word: "remain to be done", meaning: "有待完成" }
+                ]
+            },
+            {
+                id: 171,
+                question: "As a politician, he ought to know how to handle ________ media.",
+                options: { A: "hostile", B: "contrasted", C: "countless", D: "hospitable" },
+                answer: "A",
+                analysis: "本题考查形容词词义辨析。句意为“作为一名政客，他应当知道如何应对充满敌意的媒体”。hostile意为“敌对的，充满敌意的”，符合政治语境。contrasted意为“形成对比的”；countless意为“无数的”；hospitable意为“好客的”，均不符合句意。",
+                vocabulary: [
+                    { word: "hostile", meaning: "adj. 敌对的，充满敌意的" },
+                    { word: "handle", meaning: "v. 应对，处理" },
+                    { word: "politician", meaning: "n. 政客，政治家" }
+                ]
+            },
+            {
+                id: 172,
+                question: "As a conservationist, I need to explore the ______ human-ocean connection: how the ocean can provide for people and how our impacts affect the health of our oceans.",
+                options: { A: "vital", B: "giant", C: "countless", D: "alien" },
+                answer: "A",
+                analysis: "本题考查形容词词义辨析。句意为“作为一名环保主义者，我需要探究人与海洋之间至关重要的联系：海洋如何供养人类，以及我们的影响如何作用于海洋健康”。vital意为“至关重要的”，符合句意。giant意为“巨大的”；countless意为“无数的”；alien意为“陌生的”，均不符合语境。",
+                vocabulary: [
+                    { word: "vital", meaning: "adj. 至关重要的，生死攸关的" },
+                    { word: "conservationist", meaning: "n. 环保主义者" },
+                    { word: "provide for", meaning: "供养，供给" }
+                ]
+            },
+            {
+                id: 173,
+                question: "I am afraid this plan of yours does not ________ the company’s overall marketing strategy.",
+                options: { A: "fit together", B: "fit for", C: "fit into", meaning: "" },
+                answer: "C",
+                analysis: "本题考查动词短语辨析。句意为“恐怕你的这个计划与公司的整体营销策略不相符”。fit into意为“符合，融入，适配”，符合语境。fit together意为“组装在一起”；fit for意为“适合（用途）”，均不符合句意。",
+                vocabulary: [
+                    { word: "fit into", meaning: "符合，融入，适配" },
+                    { word: "marketing strategy", meaning: "营销策略" },
+                    { word: "overall", meaning: "adj. 整体的，全面的" }
+                ]
+            },
+            {
+                id: 174,
+                question: "As the strikers lingered on the streets, refusing to disband, the police finally ___________ using tear gas.",
+                options: { A: "stepped down", B: "stepped in", C: "stepped up", D: "stepped back" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“罢工者在街上逗留，拒绝解散，警方最终动用催泪瓦斯介入”。step in意为“介入，干预”，符合执法语境。step down意为“辞职，下台”；step up意为“加强，增加”；step back意为“后退”，均不符合句意。",
+                vocabulary: [
+                    { word: "step in", meaning: "介入，干预" },
+                    { word: "striker", meaning: "n. 罢工者" },
+                    { word: "tear gas", meaning: "催泪瓦斯" }
+                ]
+            },
+            {
+                id: 175,
+                question: "For many founders of family firms, the decision to retire and __________ control of the business to their offspring is difficult.",
+                options: { A: "relinquish", B: "hold", C: "get", D: "take" },
+                answer: "A",
+                analysis: "本题考查动词词义辨析。句意为“对许多家族企业创始人而言，退休并将企业控制权交给后代是一个艰难的决定”。relinquish意为“交出，放弃”，符合语境。hold意为“持有”；get意为“得到”；take意为“拿走”，均不符合句意。",
+                vocabulary: [
+                    { word: "relinquish", meaning: "v. 交出，放弃（控制权/权力）" },
+                    { word: "family firms", meaning: "家族企业" },
+                    { word: "offspring", meaning: "n. 后代，子女" }
+                ]
+            },
+            {
+                id: 176,
+                question: "Scientists declared that the discovery could not only _______ Einstein’s theory of relativity but also add to their understanding of the universe.",
+                options: { A: "commit", B: "validate", C: "note", D: "guarantee" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为“科学家宣称，这一发现不仅能验证爱因斯坦的相对论，还能加深人类对宇宙的理解”。validate意为“验证，证实”，符合科学语境。commit意为“承诺，犯罪”；note意为“指出”；guarantee意为“保证”，均不符合句意。",
+                vocabulary: [
+                    { word: "validate", meaning: "v. 验证，证实" },
+                    { word: "theory of relativity", meaning: "相对论" },
+                    { word: "universe", meaning: "n. 宇宙" }
+                ]
+            },
+            {
+                id: 177,
+                question: "The decisive man is calm and cool under pressure; he can make decisions_______.",
+                options: { A: "fly the kite", B: "fly the coop", C: "on the fly", D: "fly wing to wing" },
+                answer: "C",
+                analysis: "本题考查固定习语。句意为“果断的人在压力下沉着冷静，能快速做决定”。on the fly为固定习语，意为“即兴地，快速地，忙中”，符合语境。fly the kite意为“放风筝”；fly the coop意为“逃跑”；fly wing to wing意为“并肩飞行”，均不符合句意。",
+                vocabulary: [
+                    { word: "on the fly", meaning: "即兴地，快速地，忙中" },
+                    { word: "decisive", meaning: "adj. 果断的，决定性的" },
+                    { word: "under pressure", meaning: "在压力下" }
+                ]
+            },
+            {
+                id: 178,
+                question: "The countryside was ______ with small villages.",
+                options: { A: "full", B: "charged", C: "filled", D: "dotted" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析与固定搭配。be dotted with为固定短语，意为“星罗棋布地散布着”，形象地描述村庄分布在乡村的状态。be full of意为“充满”；be charged with意为“负责，被指控”；be filled with意为“填满”，均不如dotted形象贴切。",
+                vocabulary: [
+                    { word: "be dotted with", meaning: "星罗棋布地散布着" },
+                    { word: "countryside", meaning: "n. 乡村，农村" },
+                    { word: "village", meaning: "n. 村庄" }
+                ]
+            },
+            {
+                id: 179,
+                question: "Flights for Rome _______ from Terminal 3.",
+                options: { A: "track", B: "depart", C: "apart", D: "part" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为“飞往罗马的航班从3号航站楼出发”。depart意为“出发，离港”，符合机场语境。track意为“追踪”；apart是副词“分开地”；part意为“分开”，均不符合句意。",
+                vocabulary: [
+                    { word: "depart", meaning: "v. 出发，离港；离开" },
+                    { word: "flight", meaning: "n. 航班，飞行" },
+                    { word: "terminal", meaning: "n. 航站楼，终端" }
+                ]
+            },
+            {
+                id: 180,
+                question: "He urged donors to ________ their efforts to send aid to Somalia.",
+                options: { A: "step up", B: "step on", C: "step down", D: "step off" },
+                answer: "A",
+                analysis: "本题考查动词短语辨析。句意为“他敦促捐赠方加大力度，向索马里运送援助物资”。step up意为“加大，增加，加强”，step up efforts表示“加大力度”，符合语境。step on意为“踩”；step down意为“辞职”；step off意为“走下”，均不符合句意。",
+                vocabulary: [
+                    { word: "step up", meaning: "加大，增加，加强" },
+                    { word: "donor", meaning: "n. 捐赠方，捐赠者" },
+                    { word: "aid", meaning: "n. 援助" }
+                ]
+            },
+            {
+                id: 181,
+                question: "The hotel also _____ two swimming pools and a golf course.",
+                options: { A: "collapses", B: "hawks", C: "boasts", D: "places" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“这家酒店还拥有两座游泳池和一个高尔夫球场，引以为傲”。boast意为“拥有（引以为傲的事物）；吹嘘”，符合酒店介绍的语境。collapse意为“坍塌”；hawk意为“兜售”；place意为“放置”，均不符合句意。",
+                vocabulary: [
+                    { word: "boast", meaning: "v. 拥有（引以为傲的事物）；吹嘘" },
+                    { word: "golf course", meaning: "高尔夫球场" },
+                    { word: "hotel", meaning: "n. 酒店" }
+                ]
+            },
+            {
+                id: 182,
+                question: "The conflicting sides took the _______ step toward negotiation.",
+                options: { A: "sick", B: "loyal", C: "initial", D: "potential" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为“冲突双方向谈判迈出了第一步”。initial意为“最初的，初始的”，initial step表示“第一步，初步措施”，符合语境。sick意为“生病的”；loyal意为“忠诚的”；potential意为“潜在的”，均不符合句意。",
+                vocabulary: [
+                    { word: "initial", meaning: "adj. 最初的，初始的" },
+                    { word: "negotiation", meaning: "n. 谈判，协商" },
+                    { word: "conflicting sides", meaning: "冲突双方" }
+                ]
+            },
+            {
+                id: 183,
+                question: "One of the greatest recording artists of all time, Stevie Wonder is possibly the only person I would consider a musical __________.",
+                options: { A: "mind", B: "wit", C: "intellectual", D: "genius" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为“史蒂夫·旺德是史上最伟大的唱片艺术家之一，他可能是我心目中唯一的音乐天才”。musical genius意为“音乐天才”，符合对传奇歌手的评价。mind意为“头脑”；wit意为“机智”；intellectual意为“知识分子”，均不符合语境。",
+                vocabulary: [
+                    { word: "genius", meaning: "n. 天才，天赋" },
+                    { word: "musical genius", meaning: "音乐天才" },
+                    { word: "of all time", meaning: "有史以来" }
+                ]
+            },
+            {
+                id: 184,
+                question: "An examination of the unique eyes of skate (ray fish) led to advances in _____ blindness.",
+                options: { A: "complying", B: "competing", C: "combating", D: "comparing" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“对鳐鱼独特眼睛的研究推动了失明防治领域的进展”。combat意为“对抗，防治”，combat blindness表示“防治失明”，符合医学语境。comply意为“遵守”；compete意为“竞争”；compare意为“比较”，均不符合句意。",
+                vocabulary: [
+                    { word: "combat", meaning: "v. 对抗，防治 n. 战斗" },
+                    { word: "advance", meaning: "n. 进展，进步 v. 前进" },
+                    { word: "blindness", meaning: "n. 失明" }
+                ]
+            },
+            {
+                id: 185,
+                question: "There was a remarkable _________ between him and his father.",
+                options: { A: "cooperation", B: "resemblance", C: "collection", D: "alike" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“他和他的父亲长得非常像”。resemblance意为“相似，相像”，符合句意。cooperation意为“合作”；collection意为“收集”；alike是形容词“相像的”，不能作宾语。",
+                vocabulary: [
+                    { word: "resemblance", meaning: "n. 相似，相像" },
+                    { word: "remarkable", meaning: "adj. 显著的，非凡的" },
+                    { word: "between A and B", meaning: "在A和B之间" }
+                ]
+            },
+            {
+                id: 186,
+                question: "Once we ____________ all the facts, we’ll be able to understand the situation better.",
+                options: { A: "put up", B: "put out", C: "put in", D: "pull together" },
+                answer: "D",
+                analysis: "本题考查动词短语辨析。句意为“一旦我们把所有事实汇总起来，就能更好地了解情况”。pull together意为“汇总，齐心协力”，此处表示“汇总信息”，符合语境。put up意为“张贴，搭建”；put out意为“扑灭，出版”；put in意为“投入”，均不符合句意。",
+                vocabulary: [
+                    { word: "pull together", meaning: "汇总，齐心协力" },
+                    { word: "fact", meaning: "n. 事实" },
+                    { word: "situation", meaning: "n. 情况，形势" }
+                ]
+            },
+            {
+                id: 187,
+                question: "It is ________ for us to change our way of thinking or we will be out of step with our times.",
+                options: { A: "comparative", B: "operative", C: "impressive", D: "imperative" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为“我们必须转变思维方式，否则就会与时代脱节”。imperative意为“必要的，势在必行的”，符合句意。comparative意为“比较的”；operative意为“有效的”；impressive意为“令人印象深刻的”，均不符合语境。",
+                vocabulary: [
+                    { word: "imperative", meaning: "adj. 必要的，势在必行的" },
+                    { word: "out of step with", meaning: "与……脱节" },
+                    { word: "way of thinking", meaning: "思维方式" }
+                ]
+            },
+            {
+                id: 188,
+                question: "International space cooperation is to peacefully develop and use space resources _______ all mankind.",
+                options: { A: "on the benefit of", B: "from the benefit of", C: "in the benefit of", D: "for the benefit of" },
+                answer: "D",
+                analysis: "本题考查固定短语。for the benefit of为固定搭配，意为“为了……的利益，造福”，符合句意“国际太空合作是为了全人类的利益和平开发利用太空资源”。其余选项均为错误搭配。",
+                vocabulary: [
+                    { word: "for the benefit of", meaning: "为了……的利益，造福" },
+                    { word: "space cooperation", meaning: "太空合作" },
+                    { word: "mankind", meaning: "n. 人类" }
+                ]
+            },
+            {
+                id: 189,
+                question: "Ask them to send you information on how to ______ the value of your belongings.",
+                options: { A: "judge", B: "validate", C: "assess", D: "evacuate" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“让他们给你发一份关于如何评估财物价值的资料”。assess意为“评估，估价”，assess the value表示“评估价值”，符合语境。judge意为“判断”；validate意为“验证”；evacuate意为“疏散”，均不符合句意。",
+                vocabulary: [
+                    { word: "assess", meaning: "v. 评估，估价" },
+                    { word: "belongings", meaning: "n. 财物，所有物" },
+                    { word: "value", meaning: "n. 价值" }
+                ]
+            },
+            {
+                id: 190,
+                question: "He nurses an ______ to be a poet.",
+                options: { A: "infection", B: "aspiration", C: "inspection", D: "offence" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为“他怀有成为诗人的志向”。aspiration意为“志向，抱负”，nurse an aspiration to do sth.表示“怀有做某事的志向”。infection意为“感染”；inspection意为“检查”；offence意为“冒犯”，均不符合句意。",
+                vocabulary: [
+                    { word: "aspiration", meaning: "n. 志向，抱负，渴望" },
+                    { word: "nurse", meaning: "v. 怀有（想法/情感）；护理" },
+                    { word: "poet", meaning: "n. 诗人" }
+                ]
+            },
+            {
+                id: 191,
+                question: "I got a job offer from an organization working on protecting animals________ with extinction.",
+                options: { A: "threatened", B: "controlled", C: "managed", D: "conserved" },
+                answer: "A",
+                analysis: "本题考查形容词词义辨析。句意为“我收到了一个保护濒危动物的机构的工作邀请”。threatened with extinction为固定表达，意为“濒临灭绝的”，作后置定语修饰animals。controlled意为“受控制的”；managed意为“被管理的”；conserved意为“被保护的”，均不符合搭配。",
+                vocabulary: [
+                    { word: "threatened", meaning: "adj. 受到威胁的，濒危的" },
+                    { word: "extinction", meaning: "n. 灭绝" },
+                    { word: "job offer", meaning: "工作邀请，录用通知" }
+                ]
+            },
+            {
+                id: 192,
+                question: "As you know, our planet, with its atmosphere and everything on it, is constantly _______.",
+                options: { A: "floating", B: "spinning", C: "swinging", D: "suspending" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为“如你所知，我们的星球连同它的大气层和上面的一切，都在不停地旋转”。spin意为“旋转”，指地球自转，符合科学常识。float意为“漂浮”；swing意为“摆动”；suspend意为“悬浮”，均不符合句意。",
+                vocabulary: [
+                    { word: "spin", meaning: "v. 旋转；纺纱 n. 旋转" },
+                    { word: "atmosphere", meaning: "n. 大气层；气氛" },
+                    { word: "constantly", meaning: "adv. 不断地，持续地" }
+                ]
+            },
+            {
+                id: 193,
+                question: "The horseshoe crab was ______ in developing a test for bacterial contamination.",
+                options: { A: "crucial", B: "interested", C: "crazy", D: "crying" },
+                answer: "A",
+                analysis: "本题考查形容词词义辨析与固定搭配。be crucial in doing sth.意为“在……中至关重要”，符合句意“鲎在研发细菌污染检测方法中起到了关键作用”。interested意为“感兴趣的”；crazy意为“疯狂的”；crying意为“哭泣的”，均不符合句意。",
+                vocabulary: [
+                    { word: "crucial", meaning: "adj. 至关重要的，关键的" },
+                    { word: "horseshoe crab", meaning: "鲎（马蹄蟹）" },
+                    { word: "bacterial contamination", meaning: "细菌污染" }
+                ]
+            },
+            {
+                id: 194,
+                question: "The toadfish’s ability to ________ its central nervous system is of much interest to neuroscientists.",
+                options: { A: "reputable", B: "register", C: "regenerate", D: "represent" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为“蟾鱼的中枢神经系统再生能力令神经科学家非常感兴趣”。regenerate意为“再生，重生”，符合生物学语境。reputable是形容词“声誉好的”；register意为“注册”；represent意为“代表”，均不符合句意。",
+                vocabulary: [
+                    { word: "regenerate", meaning: "v. 再生，重生，更新" },
+                    { word: "central nervous system", meaning: "中枢神经系统" },
+                    { word: "neuroscientist", meaning: "n. 神经科学家" }
+                ]
+            },
+            {
+                id: 195,
+                question: "The lawyer argued that it is wrong to execute a person for crimes he ______ while he was a minor.",
+                options: { A: "awaked", B: "committed", C: "attributed", D: "financed" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析与固定搭配。commit a crime为固定搭配，意为“犯罪”，此处用过去式committed。awake意为“醒来”；attribute意为“归因于”；finance意为“资助”，均不符合搭配。",
+                vocabulary: [
+                    { word: "commit", meaning: "v. 犯（罪）；承诺" },
+                    { word: "commit a crime", meaning: "犯罪" },
+                    { word: "minor", meaning: "n. 未成年人 adj. 次要的" }
+                ]
+            },
+            {
+                id: 196,
+                question: "I have to__________ several streets and alleys for daily necessities.",
+                options: { A: "pass through", B: "settle down", C: "go through", D: "take over" },
+                answer: "A",
+                analysis: "本题考查动词短语辨析。句意为“我得穿过好几条街巷去买日用品”。pass through意为“穿过，经过”，符合空间移动的语境。settle down意为“定居”；go through意为“经历，仔细检查”；take over意为“接管”，均不符合句意。",
+                vocabulary: [
+                    { word: "pass through", meaning: "穿过，经过" },
+                    { word: "daily necessities", meaning: "日用品" },
+                    { word: "alley", meaning: "n. 小巷，胡同" }
+                ]
+            },
+            {
+                id: 197,
+                question: "After forty years in the business, it’s time for me to ________ and let someone younger take over.",
+                options: { A: "play a role", B: "take charge", C: "take a back seat", D: "pass through" },
+                answer: "C",
+                analysis: "本题考查动词短语辨析。句意为“在这一行干了四十年，我该退居二线，让更年轻的人来接手了”。take a back seat意为“退居二线，处于次要地位”，符合语境。play a role意为“起作用”；take charge意为“负责”；pass through意为“穿过”，均不符合句意。",
+                vocabulary: [
+                    { word: "take a back seat", meaning: "退居二线，处于次要地位" },
+                    { word: "take over", meaning: "接管，接手" },
+                    { word: "forty years", meaning: "四十年" }
+                ]
+            },
+            {
+                id: 198,
+                question: "As a result of development many people have been able to _________of old housing into new accommodation.",
+                options: { A: "keep from", B: "move out", C: "move toward", D: "stay away" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“发展让许多人得以搬出旧房子，住进新居”。move out of意为“搬出”，符合语境。keep from意为“避免”；move toward意为“走向”；stay away意为“远离”，均不符合句意。",
+                vocabulary: [
+                    { word: "move out of", meaning: "搬出……" },
+                    { word: "accommodation", meaning: "n. 住处，住房" },
+                    { word: "as a result of", meaning: "由于，作为……的结果" }
+                ]
+            },
+            {
+                id: 199,
+                question: "He hid in a forest _____ the village.",
+                options: { A: "observing", B: "overlooking", C: "assuming", D: "exploring" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为“他躲在俯瞰村庄的一片树林里”。overlooking意为“俯瞰，俯视”，现在分词作后置定语，符合地势高的森林与村庄的位置关系。observing意为“观察”；assuming意为“假设”；exploring意为“探索”，均不符合句意。",
+                vocabulary: [
+                    { word: "overlook", meaning: "v. 俯瞰，俯视；忽视" },
+                    { word: "forest", meaning: "n. 森林" },
+                    { word: "hide", meaning: "v. 躲藏，隐藏" }
+                ]
+            },
+            {
+                id: 200,
+                question: "It was only a matter of time before more buildings were pulled, but he never ________ the future.",
+                options: { A: "look forward to", B: "dwell on", C: "rely on", D: "comment on" },
+                answer: "B",
+                analysis: "本题考查动词短语辨析。句意为“更多建筑被拆除只是时间问题，但他从不去细想未来”。dwell on意为“细想，详述，沉湎于”，符合语境。look forward to意为“期待”；rely on意为“依靠”；comment on意为“评论”，均不符合句意。",
+                vocabulary: [
+                    { word: "dwell on", meaning: "细想，详述；沉湎于" },
+                    { word: "a matter of time", meaning: "只是时间问题" },
+                    { word: "pull down", meaning: "拆除（此处省略down）" }
+                ]
+            },
+            {
+                id: 201,
+                question: "The aquarium(水族馆) has some interesting _____ of unusual tropical fish.",
+                options: { A: "specimens", B: "specimen", C: "species", D: "specie" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析与近义词区分。句意为\"水族馆里有一些不寻常的热带鱼标本/种类\"。specimens意为\"标本，样品\"，指作为样本的个体，符合水族馆展示的语境。specimen是单数形式；species意为\"物种\"，强调生物分类；specie意为\"硬币\"，均不符合语境。",
+                vocabulary: [
+                    {word: "specimen", meaning: "n. 标本，样品（单数）"}, {word: "specimens", meaning: "n. 标本，样品（复数）"}, {word: "species", meaning: "n. 物种，种类（单复数同形）"}
+                ]
+            },
+            {
+                id: 202,
+                question: "Astronauts have brought back _____ of rock from the moon.",
+                options: { A: "specimen", B: "specimens", C: "species", D: "specie" },
+                answer: "B",
+                analysis: "本题考查名词单复数。句意为\"宇航员从月球带回了岩石样本\"。空格前无冠词a/an，且表示复数的岩石样本，因此用复数形式specimens。specimen为单数；species意为\"物种\"；specie意为\"硬币\"，均不符合语义。",
+                vocabulary: [
+                    {word: "specimen", meaning: "n. 标本，样品"}, {word: "bring back", meaning: "带回"}, {word: "astronaut", meaning: "n. 宇航员"}
+                ]
+            },
+            {
+                id: 203,
+                question: "We can safely ______ that everyone in this small town has a mobile phone.",
+                options: { A: "pursue", B: "assume", C: "propose", D: "consume" },
+                answer: "B",
+                analysis: "本题考查动词词义辨析。句意为\"我们可以有把握地认为这个小镇上每个人都有手机\"。assume意为\"假设，认为\"，符合句意。pursue意为\"追求，追赶\"；propose意为\"提议，建议\"；consume意为\"消费，消耗\"，均不符合语境。",
+                vocabulary: [
+                    {word: "assume", meaning: "v. 假设，认为；承担"}, {word: "safely", meaning: "adv. 安全地；有把握地"}, {word: "mobile phone", meaning: "手机"}
+                ]
+            },
+            {
+                id: 204,
+                question: "When we explore the deep sea, we are exploring for our own ______.",
+                options: { A: "arrive", B: "arrival", C: "survive", D: "survival" },
+                answer: "D",
+                analysis: "本题考查词性辨析。句意为\"当我们探索深海时，我们是在为自身的生存而探索\"。空格前有形容词性物主代词our own，需填入名词。survival意为\"生存，存活\"，符合句意。arrive和survive均为动词；arrival虽为名词\"到达\"，但与语境不符。",
+                vocabulary: [
+                    {word: "survival", meaning: "n. 生存，存活"}, {word: "explore", meaning: "v. 探索，探险"}, {word: "deep sea", meaning: "深海"}
+                ]
+            },
+            {
+                id: 205,
+                question: "\"I have made it quite clear ______ that I want to be part of the team,\" John said.",
+                options: { A: "in its entirety", B: "in an entirety", C: "from beginning to", D: "from the beginning" },
+                answer: "D",
+                analysis: "本题考查固定短语。句意为\"约翰说：'从一开始我就明确表示过我想成为团队的一员。'\"from the beginning为固定短语，意为\"从一开始\"，符合语境。in its entirety意为\"整体上\"；in an entirety搭配不常见；from beginning to缺少宾语，均不正确。",
+                vocabulary: [
+                    {word: "from the beginning", meaning: "从一开始"}, {word: "make it clear", meaning: "明确表示"}, {word: "be part of", meaning: "成为…的一部分"}
+                ]
+            },
+            {
+                id: 206,
+                question: "Newt Gingrich gained attention earlier this year by calling for building a ______ base on the moon.",
+                options: { A: "inclusive", B: "exceptional", C: "temporary", D: "permanent" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为\"纽特·金里奇今年早些时候因呼吁在月球上建立永久基地而受到关注\"。permanent意为\"永久的，常设的\"，a permanent base指\"永久性基地\"，符合语境。inclusive意为\"包容的\"；exceptional意为\"杰出的\"；temporary意为\"临时的\"，均不符合句意。",
+                vocabulary: [
+                    {word: "permanent", meaning: "adj. 永久的，固定的"}, {word: "gain attention", meaning: "获得关注"}, {word: "call for", meaning: "呼吁，要求"}
+                ]
+            },
+            {
+                id: 207,
+                question: "This winter they'll interact with an ______ exploring Central America in search of the classic Maya culture.",
+                options: { A: "expedition", B: "expense", C: "observation", D: "operation" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为\"今年冬天，他们将与一支探索中美洲、寻找经典玛雅文化的考察队互动\"。expedition意为\"考察队，探险队\"，符合语境。expense意为\"费用\"；observation意为\"观察\"；operation意为\"操作，行动\"，均不符合句意。",
+                vocabulary: [
+                    {word: "expedition", meaning: "n. 考察队，探险；远征"}, {word: "in search of", meaning: "寻找，搜寻"}, {word: "interact with", meaning: "与…互动"}
+                ]
+            },
+            {
+                id: 208,
+                question: "Compared to humans, robots are much easier to feed and are much easier to shield from ______.",
+                options: { A: "action", B: "expedition", C: "observation", D: "radiation" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为\"与人类相比，机器人更容易养活，也更容易屏蔽辐射\"。shield from radiation为常见搭配，意为\"屏蔽辐射\"，符合太空探索语境。action意为\"行动\"；expedition意为\"探险\"；observation意为\"观察\"，均不符合语境。",
+                vocabulary: [
+                    {word: "radiation", meaning: "n. 辐射，放射线"}, {word: "shield from", meaning: "保护…免受，屏蔽"}, {word: "compared to", meaning: "与…相比"}
+                ]
+            },
+            {
+                id: 209,
+                question: "The company is planning a deeper ______ into the commercial market.",
+                options: { A: "plug", B: "plunge", C: "ding", D: "break" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析与固定搭配。句意为\"该公司正计划更深入地进军商业市场\"。a plunge into为固定搭配，意为\"投入，闯入\"，plunge into the market意为\"进军市场\"。plug意为\"插头\"；ding意为\"叮当声\"；break意为\"打破\"，均不符合搭配。",
+                vocabulary: [
+                    {word: "plunge", meaning: "n./v. 投入，猛跌；纵身跳入"}, {word: "commercial market", meaning: "商业市场"}, {word: "a plunge into", meaning: "投入，闯入"}
+                ]
+            },
+            {
+                id: 210,
+                question: "If this round of talk fails, the world's trading environment is likely to become increasingly________.",
+                options: { A: "contrasted", B: "countless", C: "hostile", D: "hospitable" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为\"如果本轮谈判失败，全球贸易环境很可能将变得日益充满敌意\"。hostile意为\"敌对的，不利的\"，符合谈判失败的逻辑。contrasted意为\"对比的\"；countless意为\"无数的\"；hospitable意为\"好客的\"，均不符合语境。",
+                vocabulary: [
+                    {word: "hostile", meaning: "adj. 敌对的，不利的；有敌意的"}, {word: "trading environment", meaning: "贸易环境"}, {word: "increasingly", meaning: "adv. 日益，越来越"}
+                ]
+            },
+            {
+                id: 211,
+                question: "We can safely say that our daily lives are ________ by habits.",
+                options: { A: "governed", B: "governing", C: "government", D: "govern" },
+                answer: "A",
+                analysis: "本题考查动词的被动语态。句意为\"我们可以有把握地说，我们的日常生活受习惯支配\"。are governed by为被动语态，govern意为\"支配，控制\"，符合语境。governing为现在分词；government为名词\"政府\"；govern为动词原形，均不符合语法。",
+                vocabulary: [
+                    {word: "govern", meaning: "v. 支配，控制；治理"}, {word: "daily lives", meaning: "日常生活"}, {word: "habit", meaning: "n. 习惯"}
+                ]
+            },
+            {
+                id: 212,
+                question: "The aquarium(水族馆) has some interesting _____ of unusual tropical fish.",
+                options: { A: "specimen", B: "specimens", C: "specie", D: "species" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为\"水族馆里有一些不寻常的热带鱼品种\"。species意为\"物种，种类\"，单复数同形，指不同类型的鱼，符合句意。specimen意为\"标本\"；specimens为复数\"标本\"；specie意为\"硬币\"，均不符合语义。",
+                vocabulary: [
+                    {word: "species", meaning: "n. 物种，种类（单复数同形）"}, {word: "tropical fish", meaning: "热带鱼"}, {word: "aquarium", meaning: "n. 水族馆，鱼缸"}
+                ]
+            },
+            {
+                id: 213,
+                question: "She spoke without a ______ of bitterness.",
+                options: { A: "few", B: "trace", C: "stock", D: "piece" },
+                answer: "B",
+                analysis: "本题考查固定搭配。a trace of为固定搭配，意为\"一丝，微量\"，常用于抽象名词前，a trace of bitterness意为\"一丝苦涩\"。few用于可数名词复数前；stock意为\"库存\"；piece意为\"片，块\"，均不用于形容bitterness。",
+                vocabulary: [
+                    {word: "trace", meaning: "n. 痕迹，微量 v. 追踪"}, {word: "a trace of", meaning: "一丝，微量"}, {word: "bitterness", meaning: "n. 苦涩，痛苦"}
+                ]
+            },
+            {
+                id: 214,
+                question: "Any ________ to actual persons, place, or events is purely coincidental.",
+                options: { A: "residence", B: "confidence", C: "indifference", D: "resemblance" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为\"任何与真实人物、地点或事件的相似之处纯属巧合\"。resemblance意为\"相似之处\"，常见于免责声明中。residence意为\"居住\"；confidence意为\"信心\"；indifference意为\"漠不关心\"，均不符合句意。",
+                vocabulary: [
+                    {word: "resemblance", meaning: "n. 相似，相似之处"}, {word: "coincidental", meaning: "adj. 巧合的"}, {word: "actual persons", meaning: "真实人物"}
+                ]
+            },
+            {
+                id: 215,
+                question: "We can ______ the program to the patient's needs.",
+                options: { A: "tiled", B: "tailed", C: "tailer", D: "tailor" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为\"我们可以根据病人的需求调整方案\"。tailor作动词，意为\"调整使适应，量身定制\"，tailor sth. to sth.为固定搭配，意为\"使…适应…\"。tiled意为\"铺瓷砖\"；tailed意为\"尾随\"；tailer意为\"尾随者\"，均不符合句意。",
+                vocabulary: [
+                    {word: "tailor", meaning: "v. 调整，量身定制 n. 裁缝"}, {word: "tailor sth. to", meaning: "使某物适应…"}, {word: "program", meaning: "n. 方案，程序"}
+                ]
+            },
+            {
+                id: 216,
+                question: "In a(n) __________ competitive and specialized market it is essential for law firms to have reliable and independent partners.",
+                options: { A: "sharply", B: "decreasingly", C: "obviously", D: "increasingly" },
+                answer: "D",
+                analysis: "本题考查副词词义辨析。句意为\"在日益竞争激烈和专业化的市场中，律师事务所拥有可靠和独立的合作伙伴至关重要\"。increasingly意为\"日益，越来越\"，修饰competitive and specialized，符合语境。sharply意为\"急剧地\"；decreasingly意为\"递减地\"；obviously意为\"明显地\"，均不符合句意。",
+                vocabulary: [
+                    {word: "increasingly", meaning: "adv. 日益，越来越"}, {word: "competitive", meaning: "adj. 竞争的，有竞争力的"}, {word: "specialized", meaning: "adj. 专业化的，专门的"}
+                ]
+            },
+            {
+                id: 217,
+                question: "__________, science indicates that genes lay the groundwork for many human traits.",
+                options: { A: "Cognitively", B: "Exceptional", C: "Increasingly", D: "Senior" },
+                answer: "C",
+                analysis: "本题考查副词词义辨析。句意为\"越来越多的科学证据表明，基因为许多人类特征奠定了基础\"。Increasingly作副词，意为\"越来越多地\"，位于句首修饰整个句子。Cognitively意为\"认知地\"；Exceptional为形容词\"杰出的\"；Senior为形容词\"高级的\"，均不符合语法与句意。",
+                vocabulary: [
+                    {word: "increasingly", meaning: "adv. 日益，越来越多地"}, {word: "lay the groundwork for", meaning: "为…奠定基础"}, {word: "trait", meaning: "n. 特征，品质"}
+                ]
+            },
+            {
+                id: 218,
+                question: "The ______ management of a company is a group of high level executives that actively participate in the daily tasks of managing that company.",
+                options: { A: "elder", B: "senior", C: "superior", D: "officer" },
+                answer: "B",
+                analysis: "本题考查形容词词义辨析。senior management为固定搭配，意为\"高级管理层\"，是企业管理中的标准术语。elder意为\"年长的\"，指年龄而非级别；superior虽可表示\"上级的\"，但一般不用于修饰management；officer是名词\"官员\"，均不符合搭配。",
+                vocabulary: [
+                    {word: "senior management", meaning: "高级管理层"}, {word: "executive", meaning: "n. 高管，行政人员"}, {word: "participate in", meaning: "参与，参加"}
+                ]
+            },
+            {
+                id: 219,
+                question: "Your debt situation is ________ , and it is within your power to resolve it.",
+                options: { A: "contemporary", B: "temporary", C: "ordinary", D: "sorry" },
+                answer: "D",
+                analysis: "本题考查形容词词义辨析。句意为\"你的债务状况很糟糕，但你有能力解决它\"。sorry作形容词，可表示\"糟糕的，令人难过的\"，a sorry situation意为\"糟糕的状况\"（正式用法）。contemporary意为\"当代的\"；temporary意为\"暂时的\"；ordinary意为\"普通的\"，均不符合句意。",
+                vocabulary: [
+                    {word: "sorry", meaning: "adj. 糟糕的，难过的；对不起的"}, {word: "debt situation", meaning: "债务状况"}, {word: "within one's power", meaning: "在某人的能力范围内"}
+                ]
+            },
+            {
+                id: 220,
+                question: "Immigration is a ______ issue in many countries.",
+                options: { A: "converted", B: "controversial", C: "contracted", D: "convergent" },
+                answer: "B",
+                analysis: "本题考查形容词词义辨析。句意为\"移民在许多国家都是一个有争议的问题\"。controversial意为\"有争议的，引发争论的\"，符合immigration作为社会热点的特征。converted意为\"转变的\"；contracted意为\"收缩的\"；convergent意为\"收敛的，趋同的\"，均不符合句意。",
+                vocabulary: [
+                    {word: "controversial", meaning: "adj. 有争议的，引起争论的"}, {word: "immigration", meaning: "n. 移民，移居入境"}, {word: "issue", meaning: "n. 问题，议题"}
+                ]
+            },
+            {
+                id: 221,
+                question: "He refused to comment before he had seen all the _____ information.",
+                options: { A: "relevance", B: "relation", C: "relevant", D: "revert" },
+                answer: "C",
+                analysis: "本题考查词性辨析。句意为\"在看到所有相关信息之前，他拒绝发表评论\"。空格前有定冠词the，后有名詞information，需填入形容词修饰information。relevant为形容词，意为\"相关的\"，符合句意。relevance为名词\"相关性\"；relation为名词\"关系\"；revert为动词\"恢复\"，均不符合语法。",
+                vocabulary: [
+                    {word: "relevant", meaning: "adj. 相关的，切题的"}, {word: "refuse to do", meaning: "拒绝做某事"}, {word: "comment", meaning: "v./n. 评论"}
+                ]
+            },
+            {
+                id: 222,
+                question: "More than 200 language ________ have been made of the stories and poems told by residents.",
+                options: { A: "recordings", B: "records", C: "recorders", D: "recording" },
+                answer: "A",
+                analysis: "本题考查名词词义辨析。句意为\"居民讲述的故事和诗歌已经被录制了200多条语言录音\"。recordings意为\"录音，录制的内容\"，language recordings指\"语言录音\"。records意为\"记录\"；recorders意为\"录音机\"；recording为动名词，不与数字搭配用复数。",
+                vocabulary: [
+                    {word: "recording", meaning: "n. 录音，录制的内容"}, {word: "language", meaning: "n. 语言"}, {word: "resident", meaning: "n. 居民"}
+                ]
+            },
+            {
+                id: 223,
+                question: "The girl decided to go back to her hometown to rebuild it after ______.",
+                options: { A: "graduation", B: "graduating", C: "graduate", D: "graduated" },
+                answer: "A",
+                analysis: "本题考查名词与动名词辨析。句意为\"这个女孩决定毕业后回到家乡重建家园\"。after为介词，后接名词或动名词。graduation为名词\"毕业\"，after graduation为常用表达。graduating也可作动名词，但after graduation是更常见、更简洁的表达。graduate为动词原形；graduated为过去式，均不能直接放在介词后。",
+                vocabulary: [
+                    {word: "graduation", meaning: "n. 毕业"}, {word: "go back to", meaning: "回到"}, {word: "rebuild", meaning: "v. 重建，改造"}
+                ]
+            },
+            {
+                id: 224,
+                question: "There were a total of 2,019 ________ for the job.",
+                options: { A: "applications", B: "applicants", C: "applicable", D: "applying" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为\"这份工作共有2,019名求职者\"。applicant意为\"申请人，求职者\"，符合求职语境。application意为\"申请，申请书\"；applicable意为\"适用的\"；applying为动名词，均不符合句意。",
+                vocabulary: [
+                    {word: "applicant", meaning: "n. 申请人，求职者"}, {word: "a total of", meaning: "总共"}, {word: "job", meaning: "n. 工作，职位"}
+                ]
+            },
+            {
+                id: 225,
+                question: "We collected ________ data from 4,500 shoppers.",
+                options: { A: "survey", B: "surveys", C: "surveying", D: "surveyed" },
+                answer: "A",
+                analysis: "本题考查名词作修饰语。句意为\"我们从4,500名购物者那里收集了调查数据\"。survey data为固定搭配，意为\"调查数据\"，survey作名词直接修饰data，表示\"调查的\"。surveys为复数形式，作修饰语时通常用单数；surveying为动名词；surveyed为过去分词，均不符合此用法。",
+                vocabulary: [
+                    {word: "survey data", meaning: "调查数据"}, {word: "collect data", meaning: "收集数据"}, {word: "shopper", meaning: "n. 购物者"}
+                ]
+            },
+            {
+                id: 226,
+                question: "________ within education system, however, are often driven by test scores.",
+                options: { A: "Impressive", B: "Improvements", C: "Impressions", D: "Imprisonment" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为\"然而，教育体系内的改进通常是由考试成绩驱动的\"。空格在句中作主语，需填名词。Improvements意为\"改进，改善\"，符合句意。Impressive为形容词\"令人印象深刻的\"；Impressions意为\"印象\"；Imprisonment意为\"监禁\"，均不符合。",
+                vocabulary: [
+                    {word: "improvement", meaning: "n. 改进，改善"}, {word: "education system", meaning: "教育体系"}, {word: "test scores", meaning: "考试成绩"}
+                ]
+            },
+            {
+                id: 227,
+                question: "The government rebuilt the public toilet at the ____ of Ju'er Hutong.",
+                options: { A: "back", B: "head", C: "forward", D: "top" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为\"政府重建了菊儿胡同口的公共厕所\"。at the head of意为\"在…的顶端/开头/入口处\"，胡同口的厕所用at the head of符合空间方位。back意为\"后面\"；forward为副词\"向前\"；top意为\"顶部\"，均不符合语境。",
+                vocabulary: [
+                    {word: "at the head of", meaning: "在…的前面/入口处"}, {word: "public toilet", meaning: "公共厕所"}, {word: "hutong", meaning: "n. 胡同"}
+                ]
+            },
+            {
+                id: 228,
+                question: "The vast majority of traditional village disappeared amid China's urbanization and only 12000 villages of major ______ significance were left.",
+                options: { A: "historic", B: "historically", C: "historical", D: "history" },
+                answer: "C",
+                analysis: "本题考查形容词词义辨析。句意为\"绝大多数传统村落在中国城镇化进程中消失了，只剩下12,000个具有重要历史意义的村庄\"。historical significance意为\"历史意义\"，historical指\"与历史有关的\"。historic意为\"历史上著名的\"；historically为副词；history为名词，均不符合语法与搭配。",
+                vocabulary: [
+                    {word: "historical", meaning: "adj. 历史的，与历史有关的"}, {word: "significance", meaning: "n. 意义，重要性"}, {word: "urbanization", meaning: "n. 城镇化"}
+                ]
+            },
+            {
+                id: 229,
+                question: "If you cancel now you'll _______ all my arrangements.",
+                options: { A: "mess in", B: "mess with", C: "mess to", D: "mess up" },
+                answer: "D",
+                analysis: "本题考查动词短语辨析。句意为\"如果你现在取消，就会把我所有的安排都搞砸了\"。mess up为固定短语，意为\"弄乱，搞砸\"，符合句意。mess in不是常见搭配；mess with意为\"干涉，招惹\"；mess to不是常见搭配。",
+                vocabulary: [
+                    {word: "mess up", meaning: "弄乱，搞砸"}, {word: "cancel", meaning: "v. 取消"}, {word: "arrangement", meaning: "n. 安排，准备"}
+                ]
+            },
+            {
+                id: 230,
+                question: "He has every ________ you could want and can play for any team.",
+                options: { A: "passion", B: "attribute", C: "attitude", D: "attribution" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为\"他拥有你想要的所有特质，可以为任何球队效力\"。attribute意为\"特质，品质\"，在体育语境中指运动员具备的各项素质。passion意为\"热情\"；attitude意为\"态度\"；attribution意为\"归属，归因\"，均不符合句意。",
+                vocabulary: [
+                    {word: "attribute", meaning: "n. 特质，品质 v. 归因于"}, {word: "play for", meaning: "为…效力（球队）"}, {word: "team", meaning: "n. 团队，队伍"}
+                ]
+            },
+            {
+                id: 231,
+                question: "How's your diet going? You've _______________ the cake display all lunchtime!",
+                options: { A: "had your eye on", B: "caught one eye on", C: "had your eye to", D: "caught one eye to" },
+                answer: "A",
+                analysis: "本题考查固定短语。have one's eye on为固定短语，意为\"看中，眼馋，一直盯着\"，符合句意\"你整个午餐时间都盯着那些蛋糕！\"。caught one's eye意为\"引起注意\"，主语通常为事物；had your eye to和caught one eye to均为错误搭配。",
+                vocabulary: [
+                    {word: "have one's eye on", meaning: "看中，眼馋；密切注意"}, {word: "diet", meaning: "n. 饮食，节食"}, {word: "all lunchtime", meaning: "整个午餐时间"}
+                ]
+            },
+            {
+                id: 232,
+                question: "Writing a dictionary is an arduous and difficult task but after years of hard work we are finally__________.",
+                options: { A: "getting there", B: "getting along", C: "getting over", D: "getting around" },
+                answer: "A",
+                analysis: "本题考查动词短语辨析。句意为\"编写字典是一项艰巨的任务，但经过多年的努力，我们终于快完成了\"。get there为固定短语，意为\"到达那里，取得成功/完成目标\"，符合句意。get along意为\"相处，进展\"；get over意为\"克服\"；get around意为\"四处走动，规避\"，均不符合语境。",
+                vocabulary: [
+                    {word: "get there", meaning: "取得成功，达到目标；快完成了"}, {word: "arduous", meaning: "adj. 艰巨的，费力的"}, {word: "dictionary", meaning: "n. 字典"}
+                ]
+            },
+            {
+                id: 233,
+                question: "Once we ____________ all the facts, we'll be able to understand the situation better.",
+                options: { A: "pull together", B: "put out", C: "put up", D: "put in" },
+                answer: "A",
+                analysis: "本题考查动词短语辨析。句意为\"一旦我们把所有事实汇集起来，就能更好地理解情况\"。pull together意为\"汇集，整理，齐心协力\"，pull facts together指\"汇集事实\"。put out意为\"扑灭，出版\"；put up意为\"张贴，搭建\"；put in意为\"投入，插入\"，均不符合句意。",
+                vocabulary: [
+                    {word: "pull together", meaning: "汇集，整理；齐心协力"}, {word: "fact", meaning: "n. 事实"}, {word: "understand the situation", meaning: "理解情况"}
+                ]
+            },
+            {
+                id: 234,
+                question: "The guarantee could be __________ if the company goes bankrupt.",
+                options: { A: "worthless", B: "cheap", C: "fake", D: "dummy" },
+                answer: "A",
+                analysis: "本题考查形容词词义辨析。句意为\"如果公司破产，担保可能变得一文不值\"。worthless意为\"无价值的，一文不值的\"，符合公司破产后担保失效的逻辑。cheap意为\"便宜的\"；fake意为\"伪造的\"；dummy意为\"假的，仿制的\"，均不符合语境。",
+                vocabulary: [
+                    {word: "worthless", meaning: "adj. 无价值的，一文不值的"}, {word: "guarantee", meaning: "n. 担保，保证"}, {word: "go bankrupt", meaning: "破产"}
+                ]
+            },
+            {
+                id: 235,
+                question: "The more you keep your brain active, the easier you will find it to __________ new ideas.",
+                options: { A: "come up with", B: "come up to", C: "come up", D: "come upon" },
+                answer: "A",
+                analysis: "本题考查动词短语辨析。句意为\"你的大脑保持活跃的时间越长，你就越容易提出新的想法\"。come up with意为\"想出，提出（主意、方案等）\"，符合句意。come up to意为\"达到，比得上\"；come up意为\"出现，上升\"；come upon意为\"偶然发现\"，均不符合句意。",
+                vocabulary: [
+                    {word: "come up with", meaning: "想出，提出（主意、方案等）"}, {word: "keep...active", meaning: "保持…活跃"}, {word: "brain", meaning: "n. 大脑"}
+                ]
+            },
+            {
+                id: 236,
+                question: "The last couple of days I've had a severe pain in one of my upper right teeth. It hurts _________ when pressed on.",
+                options: { A: "in hell", B: "as hell", C: "like hell", D: "by hell" },
+                answer: "C",
+                analysis: "本题考查固定短语。like hell为固定短语，意为\"非常，拼命地\"，hurts like hell表示\"疼得要命\"，是口语常用表达。in hell常用于what the hell等表达中；as hell虽可用于强调，但位于形容词后（如sure as hell），不与hurt直接搭配；by hell不是标准用法。",
+                vocabulary: [
+                    {word: "like hell", meaning: "非常，拼命地，要命地"}, {word: "severe pain", meaning: "剧烈疼痛"}, {word: "press on", meaning: "按压"}
+                ]
+            },
+            {
+                id: 237,
+                question: "Still, it is comforting to realize that other species besides our own can stand back and __________ the world around them, even if their horizons are more limited than ours.",
+                options: { A: "attribute", B: "commit", C: "beware", D: "assess" },
+                answer: "D",
+                analysis: "本题考查动词词义辨析。句意为\"不过，意识到人类以外的其他物种也能退后一步评估周围的世界，即使它们的视野比我们有限，这仍令人欣慰\"。assess意为\"评估，评价\"，符合动物审视环境的语境。attribute意为\"归因于\"；commit意为\"犯（罪），承诺\"；beware意为\"当心\"，均不符合句意。",
+                vocabulary: [
+                    {word: "assess", meaning: "v. 评估，评价"}, {word: "species", meaning: "n. 物种"}, {word: "stand back", meaning: "退后，保持距离"}
+                ]
+            },
+            {
+                id: 238,
+                question: "Later, I found out that less than 15% of the ______ had been offered positions that year.",
+                options: { A: "applicable", B: "applying", C: "application", D: "applicants" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为\"后来我发现，那年只有不到15%的求职者获得了职位\"。applicants意为\"求职者，申请人\"，符合就业语境。applicable为形容词\"适用的\"；applying为动名词\"申请\"；application为名词\"申请（表）\"，均不符合句意。",
+                vocabulary: [
+                    {word: "applicant", meaning: "n. 申请人，求职者"}, {word: "find out", meaning: "发现，查明"}, {word: "position", meaning: "n. 职位，位置"}
+                ]
+            },
+            {
+                id: 239,
+                question: "He gave me some ______ about a computer he had for sale.",
+                options: { A: "spell", B: "spiel", C: "spoil", D: "spill" },
+                answer: "B",
+                analysis: "本题考查名词词义辨析。句意为\"他向我大肆推销了一番他要出售的电脑\"。spiel意为\"滔滔不绝的推销辞令，花言巧语\"，常用于非正式语境。spell意为\"拼写，咒语\"；spoil意为\"破坏，宠坏\"；spill意为\"溢出\"，均不符合句意。",
+                vocabulary: [
+                    {word: "spiel", meaning: "n. 滔滔不绝的推销辞令，套话"}, {word: "for sale", meaning: "出售，待售"}, {word: "give sb. a spiel", meaning: "向某人长篇大论地推销"}
+                ]
+            },
+            {
+                id: 240,
+                question: "You should draw up a plan or ______ for the essay.",
+                options: { A: "outskirt", B: "outrage", C: "outcome", D: "outline" },
+                answer: "D",
+                analysis: "本题考查名词词义辨析。句意为\"你应该为这篇文章拟定一个计划或提纲\"。outline意为\"提纲，大纲\"，与plan并列，符合写作场景。outskirt意为\"郊区\"；outrage意为\"愤怒\"；outcome意为\"结果\"，均不符合语境。",
+                vocabulary: [
+                    {word: "outline", meaning: "n. 提纲，大纲；轮廓 v. 概述"}, {word: "draw up", meaning: "拟定，起草"}, {word: "essay", meaning: "n. 文章，论文"}
+                ]
+            },
+            {
+                id: 241,
+                question: "Employers in the financial sector value graduates with the ability to continuously________ their knowledge.",
+                options: { A: "upload", B: "upset", C: "update", D: "recruit" },
+                answer: "C",
+                analysis: "本题考查动词词义辨析。句意为\"金融行业的雇主看重那些能够不断更新知识的毕业生\"。update their knowledge为常用搭配，意为\"更新知识\"，符合终身学习的职场要求。upload意为\"上传\"；upset意为\"打乱，使不安\"；recruit意为\"招聘\"，均不符合句意。",
+                vocabulary: [
+                    {word: "update", meaning: "v. 更新，使现代化"}, {word: "financial sector", meaning: "金融行业"}, {word: "continuously", meaning: "adv. 持续地，不断地"}
+                ]
+            }
+        
+        ];
+
+        // ===================== 全局状态 =====================
+        let currentIndex = 0;
+        let userAnswers = new Array(questions.length).fill(null); // 存储用户答案
+        let score = 0;
+        let wrongCount = 0;
+
+        // ===================== DOM 元素 =====================
+        const questionText = document.getElementById('questionText');
+        const optionsContainer = document.getElementById('optionsContainer');
+        const resultArea = document.getElementById('resultArea');
+        const resultTip = document.getElementById('resultTip');
+        const analysisText = document.getElementById('analysisText');
+        const vocabList = document.getElementById('vocabList');
+        const currentNum = document.getElementById('currentNumSmall');
+        const progressText = document.getElementById('progressText');
+        const scoreText = document.getElementById('scoreText');
+        const wrongCountText = document.getElementById('wrongCount');
+        const progressBar = document.getElementById('progressBar');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const questionNav = document.getElementById('questionNav');
+        const exportBtn = document.getElementById('exportBtn');
+
+        // ===================== 初始化 =====================
+        function init() {
+            renderNav();
+            renderQuestion();
+            updateStatus();
+        }
+
+        // 渲染题号导航
+        function renderNav() {
+            questionNav.innerHTML = '';
+            questions.forEach((q, index) => {
+                const dot = document.createElement('div');
+                dot.className = 'nav-dot';
+                dot.textContent = index + 1;
+                dot.onclick = () => {
+                    currentIndex = index;
+                    renderQuestion();
+                    updateNavStatus();
+                };
+                questionNav.appendChild(dot);
+            });
+            updateNavStatus();
+        }
+
+        // 更新导航点状态
+        function updateNavStatus() {
+            const dots = questionNav.querySelectorAll('.nav-dot');
+            dots.forEach((dot, index) => {
+                dot.classList.remove('current', 'done-correct', 'done-wrong');
+                if (index === currentIndex) {
+                    dot.classList.add('current');
+                } else if (userAnswers[index] !== null) {
+                    if (userAnswers[index] === questions[index].answer) {
+                        dot.classList.add('done-correct');
+                    } else {
+                        dot.classList.add('done-wrong');
+                    }
+                }
+            });
+        }
+
+        // 渲染当前题目
+        function renderQuestion() {
+            const q = questions[currentIndex];
+            currentNum.textContent = q.id;
+            questionText.textContent = q.question;
+
+            // 渲染选项
+            optionsContainer.innerHTML = '';
+            Object.keys(q.options).forEach(key => {
+                const btn = document.createElement('button');
+                btn.className = 'option-btn w-full p-3 border border-gray-200 rounded-lg bg-white text-gray-700 font-medium';
+                btn.innerHTML = `<span class="font-bold mr-2">${key}.</span> ${q.options[key]}`;
+                
+                // 如果已经答过，显示状态
+                if (userAnswers[currentIndex] !== null) {
+                    btn.disabled = true;
+                    if (key === q.answer) {
+                        btn.classList.add('correct-opt');
+                    } else if (key === userAnswers[currentIndex] && key !== q.answer) {
+                        btn.classList.add('wrong-opt');
+                    }
+                } else {
+                    btn.onclick = () => selectOption(key);
+                }
+                
+                optionsContainer.appendChild(btn);
+            });
+
+            // 如果已经答过，显示解析
+            if (userAnswers[currentIndex] !== null) {
+                showAnalysis();
+            } else {
+                resultArea.classList.add('hidden');
+            }
+
+            // 更新按钮状态
+            prevBtn.disabled = currentIndex === 0;
+            nextBtn.disabled = currentIndex === questions.length - 1;
+        }
+
+        // 选择选项
+        function selectOption(key) {
+            const q = questions[currentIndex];
+            userAnswers[currentIndex] = key;
+
+            // 更新分数
+            const answeredCount = userAnswers.filter(a => a !== null).length;
+            wrongCount = userAnswers.filter((a, i) => a !== null && a !== questions[i].answer).length;
+            score = (answeredCount - wrongCount) * 0.5;
+
+            // 更新选项样式
+            const btns = optionsContainer.querySelectorAll('.option-btn');
+            btns.forEach(btn => btn.disabled = true);
+            
+            // 找到点击的按钮和正确答案按钮
+            btns.forEach(btn => {
+                const optKey = btn.textContent.trim().charAt(0);
+                if (optKey === q.answer) {
+                    btn.classList.add('correct-opt');
+                } else if (optKey === key && key !== q.answer) {
+                    btn.classList.add('wrong-opt');
+                }
+            });
+
+            // 显示解析
+            showAnalysis();
+            
+            // 更新状态
+            updateStatus();
+            updateNavStatus();
+
+            // 回答正确则自动跳转到下一题（延迟0.8秒）
+            const qq = questions[currentIndex];
+            if (key === qq.answer && currentIndex < questions.length - 1) {
+                setTimeout(() => {
+                    currentIndex++;
+                    renderQuestion();
+                    updateNavStatus();
+                    // 滚动到题目区域
+                    document.querySelector('.flex-1').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 800);
+            }
+        }
+
+        // 显示解析
+        function showAnalysis() {
+            const q = questions[currentIndex];
+            const isCorrect = userAnswers[currentIndex] === q.answer;
+            
+            resultTip.textContent = isCorrect ? '✅ 回答正确！' : '❌ 回答错误';
+            resultTip.className = isCorrect ? 'font-bold text-lg mb-3 text-green-600' : 'font-bold text-lg mb-3 text-red-600';
+            
+            analysisText.textContent = q.analysis;
+            
+            vocabList.innerHTML = '';
+            q.vocabulary.forEach(item => {
+                const li = document.createElement('li');
+                li.innerHTML = `<strong>${item.word}</strong>：${item.meaning}`;
+                vocabList.appendChild(li);
+            });
+
+            resultArea.classList.remove('hidden');
+        }
+
+        // 更新顶部状态
+        function updateStatus() {
+            const answeredCount = userAnswers.filter(a => a !== null).length;
+            progressText.textContent = `${answeredCount}/${questions.length}`;
+            scoreText.textContent = score.toFixed(1);
+            wrongCountText.textContent = wrongCount;
+            progressBar.style.width = `${(answeredCount / questions.length) * 100}%`;
+        }
+
+        // 上一题
+        prevBtn.onclick = () => {
+            if (currentIndex > 0) {
+                currentIndex--;
+                renderQuestion();
+                updateNavStatus();
+            }
+        };
+
+        // 下一题
+        nextBtn.onclick = () => {
+            if (currentIndex < questions.length - 1) {
+                currentIndex++;
+                renderQuestion();
+                updateNavStatus();
+            }
+        };
+
+        // ===================== 导出错题 Word 文档 =====================
+        exportBtn.onclick = () => {
+            const wrongQuestions = questions.filter((q, index) => 
+                userAnswers[index] !== null && userAnswers[index] !== q.answer
+            );
+
+            if (wrongQuestions.length === 0) {
+                alert('暂无错题，继续加油！');
+                return;
+            }
+
+            // 构建 HTML 格式的 Word 文档
+            let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">';
+            html += '<head><meta charset="utf-8"><title>英语单选错题本</title>';
+            html += '<style>';
+            html += 'body{font-family:Microsoft YaHei,Arial,sans-serif;font-size:12pt;padding:30px;}';
+            html += 'h1{text-align:center;font-size:20pt;color:#1a73e8;}';
+            html += 'h2{font-size:14pt;margin-top:20px;color:#333;}';
+            html += '.q{margin:10px 0 5px 0;font-size:12pt;}';
+            html += '.opt{margin-left:25px;font-size:11pt;color:#555;}';
+            html += '.info{color:#c0392b;margin:8px 0;}';
+            html += '.analysis{margin:8px 0;padding:10px;background:#f5f5f5;border-radius:4px;font-size:11pt;}';
+            html += '.vocab{margin-left:25px;font-size:10pt;color:#1a73e8;}';
+            html += '.hr{border:none;border-top:1px dashed #ccc;margin:20px 0;}';
+            html += '</style></head><body>';
+
+            html += '<h1>📝 英语单选错题本</h1>';
+            html += '<p style="text-align:center;color:#666;font-size:11pt;">共 ' + wrongQuestions.length + ' 道错题</p>';
+            html += '<hr style="border:none;border-top:2px solid #1a73e8;margin:20px 0;">';
+
+            wrongQuestions.forEach((q, idx) => {
+                const userAns = userAnswers[questions.indexOf(q)];
+                html += '<h2>' + (idx + 1) + '. ' + q.question + '</h2>';
+                
+                Object.keys(q.options).forEach(key => {
+                    let mark = '';
+                    if (key === q.answer && key === userAns) mark = ' ← 你的选择 ✅';
+                    else if (key === userAns) mark = ' ← 你的选择 ❌';
+                    else if (key === q.answer) mark = ' ✅';
+                    html += '<div class="opt">' + key + '. ' + q.options[key] + mark + '</div>';
+                });
+
+                html += '<div class="info"><b>你的答案：</b>' + userAns + '　　<b>正确答案：</b>' + q.answer + '</div>';
+                html += '<div class="analysis"><b>📖 解析：</b>' + q.analysis + '</div>';
+                
+                html += '<div style="margin-top:5px;"><b>📚 重点词汇：</b></div>';
+                q.vocabulary.forEach(item => {
+                    html += '<div class="vocab">• <b>' + item.word + '</b>：' + item.meaning + '</div>';
+                });
+
+                if (idx < wrongQuestions.length - 1) {
+                    html += '<hr class="hr">';
+                }
+            });
+
+            html += '<p style="text-align:center;color:#999;font-size:10pt;margin-top:30px;">—— 由在线答题系统生成 ——</p>';
+            html += '</body></html>';
+
+            try {
+                var blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
+                saveAs(blob, '英语单选错题本.doc');
+                alert('✅ 错题已导出为 "英语单选错题本.doc"，共 ' + wrongQuestions.length + ' 道错题');
+            } catch (e) {
+                // 降级方案：直接下载
+                var a = document.createElement('a');
+                a.href = 'data:application/msword;charset=utf-8,' + encodeURIComponent('\ufeff' + html);
+                a.download = '英语单选错题本.doc';
+                a.click();
+                alert('✅ 错题已导出为 "英语单选错题本.doc"，共 ' + wrongQuestions.length + ' 道错题');
+            }
+        };
+
+        // 启动
+        init();
+    </script>
+</body>
+</html>
