@@ -1,0 +1,690 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>课程在线答题系统</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #071a14;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            position: relative;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(16, 185, 129, 0.25) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(0, 212, 170, 0.2) 0%, transparent 40%),
+                radial-gradient(ellipse at 50% 80%, rgba(52, 211, 153, 0.12) 0%, transparent 40%),
+                radial-gradient(ellipse at 80% 80%, rgba(5, 150, 105, 0.1) 0%, transparent 40%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .container {
+            max-width: 1060px;
+            width: 100%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .header-badge {
+            display: inline-block;
+            padding: 6px 18px;
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.15);
+            border-radius: 100px;
+            color: #6ee7b7;
+            font-size: 0.78rem;
+            font-weight: 500;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 12px;
+            color: #e0f5ed;
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 1.05rem;
+            font-weight: 400;
+            letter-spacing: 0.3px;
+        }
+
+        .header p span {
+            color: rgba(255, 255, 255, 0.75);
+            font-weight: 500;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 32px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.4s ease, border-color 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card:hover {
+            transform: translateY(-10px) scale(1.01);
+            border-color: rgba(16, 185, 129, 0.15);
+            box-shadow: 0 30px 80px rgba(16, 185, 129, 0.08);
+        }
+
+        .card-banner {
+            height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card-banner.os {
+            background: linear-gradient(135deg, #0a2e24 0%, #0d3b2a 50%, #0f4a32 100%);
+        }
+
+        .card-banner.jizu {
+            background: linear-gradient(135deg, #0a2e24 0%, #14302a 50%, #1a2e28 100%);
+        }
+
+        .card-banner .icon-wrap {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        .card-banner.os .icon-wrap {
+            background: linear-gradient(135deg, rgba(0, 212, 170, 0.2), rgba(52, 211, 153, 0.12));
+            border: 1.5px solid rgba(0, 212, 170, 0.25);
+            box-shadow: 0 0 40px rgba(0, 212, 170, 0.12), inset 0 0 30px rgba(0, 212, 170, 0.04);
+        }
+
+        .card-banner.jizu .icon-wrap {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.12));
+            border: 1.5px solid rgba(16, 185, 129, 0.25);
+            box-shadow: 0 0 40px rgba(16, 185, 129, 0.12), inset 0 0 30px rgba(16, 185, 129, 0.04);
+        }
+
+        .card-banner .icon-wrap .icon {
+            font-size: 2.6rem;
+            filter: none;
+        }
+
+        .card-banner::before {
+            content: '';
+            position: absolute;
+            top: -60%;
+            left: -30%;
+            width: 160%;
+            height: 160%;
+            background: radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 60%);
+            animation: rotate 20s infinite linear;
+        }
+
+        .card-banner::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+        }
+
+        .card-banner.os::after {
+            background: linear-gradient(90deg, transparent, rgba(0, 212, 170, 0.5), rgba(52, 211, 153, 0.5), transparent);
+        }
+
+        .card-banner.jizu::after {
+            background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.5), rgba(5, 150, 105, 0.5), transparent);
+        }
+
+        .card-banner .glow-dot {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            pointer-events: none;
+        }
+
+        .card-banner.os .glow-dot-1 {
+            width: 200px;
+            height: 200px;
+            background: rgba(0, 212, 170, 0.1);
+            top: -60px;
+            right: -40px;
+        }
+
+        .card-banner.os .glow-dot-2 {
+            width: 140px;
+            height: 140px;
+            background: rgba(52, 211, 153, 0.07);
+            bottom: -40px;
+            left: -30px;
+        }
+
+        .card-banner.jizu .glow-dot-1 {
+            width: 200px;
+            height: 200px;
+            background: rgba(16, 185, 129, 0.1);
+            top: -60px;
+            right: -40px;
+        }
+
+        .card-banner.jizu .glow-dot-2 {
+            width: 140px;
+            height: 140px;
+            background: rgba(5, 150, 105, 0.07);
+            bottom: -40px;
+            left: -30px;
+        }
+
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .card-banner .banner-label {
+            position: absolute;
+            bottom: 18px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.2);
+            z-index: 1;
+        }
+
+        .card-body {
+            padding: 28px 30px 30px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .card-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.3px;
+        }
+
+        .card-status {
+            font-size: 0.7rem;
+            font-weight: 500;
+            padding: 4px 12px;
+            border-radius: 100px;
+        }
+
+        .card-status.os {
+            background: rgba(0, 212, 170, 0.15);
+            color: #5eead4;
+        }
+
+        .card-status.jizu {
+            background: rgba(16, 185, 129, 0.15);
+            color: #6ee7b7;
+        }
+
+        .card-subtitle {
+            font-size: 0.88rem;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 22px;
+            font-weight: 400;
+            letter-spacing: 0.2px;
+        }
+
+        .tag-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 22px;
+        }
+
+        .tag {
+            padding: 5px 14px;
+            border-radius: 100px;
+            font-size: 0.78rem;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            transition: all 0.2s ease;
+        }
+
+        .tag:hover {
+            transform: translateY(-1px);
+        }
+
+        .tag.green {
+            background: rgba(0, 212, 170, 0.12);
+            color: #a7f3d0;
+            border: 1px solid rgba(0, 212, 170, 0.2);
+        }
+
+        .tag.emerald {
+            background: rgba(16, 185, 129, 0.12);
+            color: #a7f3d0;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .tag.amber {
+            background: rgba(251, 191, 36, 0.12);
+            color: #fde68a;
+            border: 1px solid rgba(251, 191, 36, 0.2);
+        }
+
+        .tag.teal {
+            background: rgba(45, 212, 191, 0.12);
+            color: #a7f3d0;
+            border: 1px solid rgba(45, 212, 191, 0.2);
+        }
+
+        .stats {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 22px;
+        }
+
+        .stat-item {
+            flex: 1;
+            padding: 16px 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            text-align: center;
+            transition: background 0.3s ease, border-color 0.3s ease;
+        }
+
+        .card:hover .stat-item {
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(16, 185, 129, 0.15);
+        }
+
+        .stat-item .num {
+            font-size: 1.7rem;
+            font-weight: 800;
+            color: #a7f3d0;
+            letter-spacing: -0.5px;
+            line-height: 1.2;
+        }
+
+        .stat-item .label {
+            font-size: 0.72rem;
+            color: rgba(255, 255, 255, 0.45);
+            margin-top: 4px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+            margin-bottom: 18px;
+        }
+
+        .features {
+            list-style: none;
+            margin-bottom: 22px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        .features li {
+            padding: 7px 0;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.88rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: color 0.2s ease;
+            line-height: 1.5;
+        }
+
+        .card:hover .features li {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .features li .dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .features li .dot.green { background: #5eead4; box-shadow: 0 0 8px rgba(0, 212, 170, 0.35); }
+        .features li .dot.emerald { background: #6ee7b7; box-shadow: 0 0 8px rgba(16, 185, 129, 0.35); }
+
+        .features li .chapter-count {
+            margin-left: auto;
+            font-size: 0.78rem;
+            color: rgba(255, 255, 255, 0.35);
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 14px 24px;
+            border-radius: 14px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            cursor: pointer;
+            border: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 14px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .btn.os {
+            background: linear-gradient(135deg, #00d4aa 0%, #34d399 100%);
+            color: #071a14;
+        }
+
+        .btn.os::before {
+            background: linear-gradient(135deg, #1ae0b5 0%, #4ade80 100%);
+        }
+
+        .btn.jizu {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #fff;
+        }
+
+        .btn.jizu::before {
+            background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px) scale(1.02);
+        }
+
+        .btn:hover::before {
+            opacity: 1;
+        }
+
+        .btn span {
+            position: relative;
+            z-index: 1;
+        }
+
+        .btn .btn-arrow {
+            position: relative;
+            z-index: 1;
+            transition: transform 0.3s ease;
+        }
+
+        .btn:hover .btn-arrow {
+            transform: translateX(4px);
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 0.82rem;
+            font-weight: 400;
+            letter-spacing: 0.5px;
+        }
+
+        .footer-divider {
+            width: 40px;
+            height: 1px;
+            background: rgba(16, 185, 129, 0.15);
+            margin: 0 auto 16px;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 20px 14px;
+            }
+
+            .cards {
+                grid-template-columns: 1fr;
+                gap: 24px;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .header-badge {
+                font-size: 0.7rem;
+                padding: 4px 14px;
+            }
+
+            .card-banner {
+                height: 130px;
+            }
+
+            .card-body {
+                padding: 22px 20px 24px;
+            }
+
+            .stats {
+                flex-wrap: wrap;
+            }
+
+            .stat-item {
+                min-width: calc(33% - 8px);
+                padding: 12px 8px;
+            }
+
+            .stat-item .num {
+                font-size: 1.3rem;
+            }
+
+            .card-title {
+                font-size: 1.2rem;
+            }
+        }
+
+        @media (min-width: 601px) and (max-width: 900px) {
+            .cards {
+                grid-template-columns: 1fr;
+                gap: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-badge">在线练习系统</div>
+            <h1>课程在线答题系统</h1>
+            <p>操作系统 <span>·</span> 计算机组成原理 &mdash; 在线练习与复习</p>
+        </div>
+
+        <div class="cards">
+            <!-- 操作系统 -->
+            <div class="card">
+                <div class="card-banner os">
+                    <div class="glow-dot glow-dot-1"></div>
+                    <div class="glow-dot glow-dot-2"></div>
+                    <div class="icon-wrap">
+                        <span class="icon">🖥️</span>
+                    </div>
+                    <span class="banner-label">操作系统</span>
+                </div>
+                <div class="card-body">
+                    <div class="card-title-row">
+                        <div class="card-title">操作系统</div>
+                        <span class="card-status os">全部习题</span>
+                    </div>
+                    <div class="card-subtitle">搜索 · 题型筛选 · 状态筛选 · 答题进度 · 错题导出</div>
+
+                    <div class="tag-row">
+                        <span class="tag green">单选 317</span>
+                        <span class="tag emerald">大题 28</span>
+                        <span class="tag amber">判断 23</span>
+                        <span class="tag teal">多选 6</span>
+                    </div>
+
+                    <div class="stats">
+                        <div class="stat-item">
+                            <div class="num">374</div>
+                            <div class="label">总题量</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="num">8</div>
+                            <div class="label">章节</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="num">4</div>
+                            <div class="label">题型</div>
+                        </div>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <ul class="features">
+                        <li><span class="dot green"></span> 设备管理：I/O控制方式、SPOOLing、缓冲管理<span class="chapter-count">66题</span></li>
+                        <li><span class="dot green"></span> 文件系统：FCB/inode、物理结构、目录管理<span class="chapter-count">50题</span></li>
+                        <li><span class="dot green"></span> 存储管理：分页分段、页面置换、虚拟存储<span class="chapter-count">50题</span></li>
+                        <li><span class="dot green"></span> 进程同步：PV操作、经典同步问题、管程<span class="chapter-count">45题</span></li>
+                        <li><span class="dot green"></span> 死锁：银行家算法、死锁预防与检测<span class="chapter-count">45题</span></li>
+                        <li><span class="dot green"></span> 进程控制：进程线程概念、状态转换、调度<span class="chapter-count">43题</span></li>
+                        <li><span class="dot green"></span> 处理机调度：调度算法、多级反馈队列<span class="chapter-count">40题</span></li>
+                        <li><span class="dot green"></span> 操作系统引论：系统调用、多道程序设计<span class="chapter-count">35题</span></li>
+                    </ul>
+
+                    <a href="https://keep-fighting-1.github.io/fuxi/OS.html" target="_blank" class="btn os">
+                        <span>进入答题</span>
+                        <span class="btn-arrow">→</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- 计算机组成原理 -->
+            <div class="card">
+                <div class="card-banner jizu">
+                    <div class="glow-dot glow-dot-1"></div>
+                    <div class="glow-dot glow-dot-2"></div>
+                    <div class="icon-wrap">
+                        <span class="icon">⚙️</span>
+                    </div>
+                    <span class="banner-label">计算机组成原理</span>
+                </div>
+                <div class="card-body">
+                    <div class="card-title-row">
+                        <div class="card-title">计算机组成原理</div>
+                        <span class="card-status jizu">题库</span>
+                    </div>
+                    <div class="card-subtitle">搜索 · 知识点筛选 · 错题导出Word/TXT</div>
+
+                    <div class="tag-row">
+                        <span class="tag green">单选 274</span>
+                        <span class="tag amber">判断 100</span>
+                        <span class="tag emerald">374题</span>
+                    </div>
+
+                    <div class="stats">
+                        <div class="stat-item">
+                            <div class="num">374</div>
+                            <div class="label">总题量</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="num">2</div>
+                            <div class="label">题型</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="num">2</div>
+                            <div class="label">导出格式</div>
+                        </div>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <ul class="features">
+                        <li><span class="dot emerald"></span> 数据表示与运算：原码补码移码、IEEE754浮点数</li>
+                        <li><span class="dot emerald"></span> 存储系统：Cache/主存/虚拟存储器、SRAM vs DRAM</li>
+                        <li><span class="dot emerald"></span> 指令系统：寻址方式、CISC vs RISC 对比</li>
+                        <li><span class="dot emerald"></span> CPU与总线：流水线、中断系统、DMA、总线仲裁</li>
+                        <li><span class="dot emerald"></span> 搜索筛选、知识点分类、错题导出Word/TXT</li>
+                    </ul>
+
+                    <a href="https://keep-fighting-1.github.io/fuxi/jizu.html" target="_blank" class="btn jizu">
+                        <span>进入答题</span>
+                        <span class="btn-arrow">→</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="footer-divider"></div>
+            © Serendipity-Keepfighting
+        </div>
+    </div>
+</body>
+</html>
